@@ -22,6 +22,16 @@ The game creator picks one of three variants:
    opponent rerolls 2 on the same roll, the first 2 of those rerolled dice match for both
    of you. The most tightly coupled, most skill-driven variant.
 
+### Luck vs skill
+
+Under each variant on the game-type picker is a **luck-vs-skill split bar**: a Monte-Carlo
+estimate of how much of the head-to-head outcome that variant hands to the dice (luck) versus the
+gap in play (skill). Sharing dice cancels the swings that both players ride together, so luck's
+share drops and skill's share rises from Classic to Shared Start to **Linked Dice**, which is the
+most skill-driven of the three. A **Players** selector (Experts / Mixed / Novices) reweights the
+estimate for the skill level of the table. The numbers are precomputed offline
+(`solver/uncertainty.js` → `public/uncertainty.json`); see **UNCERTAINTY.md** for the method.
+
 ## Running it
 
 ```
@@ -122,5 +132,6 @@ friend testing, and Fly.io for a permanent single-instance host.
 
 ## For engineers
 
-See **HANDOFF.md** for the operational overview, and **ARCHITECTURE.md**, **SOLVER.md**, and
-**ANALYSIS.md** for the as-built design of the app, the solver, and the post-game analysis.
+See **HANDOFF.md** for the operational overview, and **ARCHITECTURE.md**, **SOLVER.md**,
+**ANALYSIS.md**, and **UNCERTAINTY.md** for the as-built design of the app, the solver, the
+post-game analysis, and the luck-vs-skill decomposition.

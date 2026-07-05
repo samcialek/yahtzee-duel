@@ -13,6 +13,7 @@ import { potentials, CATS } from '../shared/game.js';
 import { LocalEngine } from './engine.js';
 import { RemoteEngine } from './net.js';
 import { recordDecision, analyze, renderAnalysis, replayOptimal } from './analysis.js';
+import { init as initUncertainty } from './uncertainty-ui.js';
 
 // ---------------------------------------------------------------------------
 // DOM handles
@@ -754,3 +755,8 @@ setOpponent('machine');
 setAiType('standard');
 setVariant(1);
 lobbyCode.textContent = LOBBY_PLACEHOLDER;
+
+// Luck-vs-skill readout on the Variant step — fetches the tiny precomputed
+// uncertainty.json (NOT the 2MB strategy table) and paints the split bars.
+// Fire-and-forget: it fails soft and never blocks game start.
+initUncertainty();

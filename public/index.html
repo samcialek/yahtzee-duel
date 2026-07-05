@@ -37,6 +37,7 @@
         #ai-standard / #ai-perfect            segmented Machine-strength sub-toggle
         #variant-1 / #variant-2 / #variant-3  variant option cards
         #variant-group                        add ".is-locked" for joiners
+        #spread-experts / #spread-mixed / #spread-novices  skill-spread selector
         #you-dot / #opp-dot                   active-player accent dot
     * Loading state: #btn-start gets class ".is-loading" (and [disabled]) while
       the Perfect strategy table is being fetched; both removed afterwards.
@@ -52,6 +53,18 @@
     #variant-2          card — Shared Start  (data-mode="2")
     #variant-3          card — Linked Dice   (data-mode="3")
     #variant-host-note  "Set by host" note (shown to joiners)
+    LUCK-vs-SKILL readout (fed from public/uncertainty.json by app.js) ---------
+    #seg-spread         segmented skill-spread selector (group; default = Mixed)
+    #spread-experts       button — spread "experts" (data-spread="experts")
+    #spread-mixed         button — spread "mixed"   (data-spread="mixed", default .is-selected)
+    #spread-novices       button — spread "novices" (data-spread="novices")
+    #unc-explain        static one-line explainer under the step head
+    per variant card i ∈ {1,2,3} — filled from the JSON for the active spread:
+      #unc-bar-i          split-bar container (decorative, aria-hidden)
+      #unc-luck-i           luck segment  — set style.width = "NN%"  (muted)
+      #unc-skill-i          skill segment — set style.width = "NN%"  (vermillion)
+      #unc-cap-i          mono caption — set textContent, e.g. "62% luck · 38% skill"
+                          (optional inner spans .luck / .skill get muted / accent ink)
     #input-name         text input — player name
     #actions-machine    wrapper: shown when Machine chosen
     #btn-start            button — begin an AI game
@@ -151,21 +164,59 @@
           <span class="step-label">Variant</span>
           <span class="host-note" id="variant-host-note" hidden>Set by host</span>
         </div>
+        <div class="unc-intro">
+          <p class="unc-explain" id="unc-explain">How much of the win each variant hands to luck rather than skill &mdash; the dice against the gap in play &mdash; from a Monte-Carlo simulation of thousands of games.</p>
+          <div class="unc-controls">
+            <div class="unc-legend" aria-hidden="true">
+              <span class="unc-legend-item"><i class="unc-sw unc-sw--luck"></i>Luck</span>
+              <span class="unc-legend-item"><i class="unc-sw unc-sw--skill"></i>Skill</span>
+            </div>
+            <div class="unc-spread">
+              <span class="unc-spread-label">Players</span>
+              <div class="segmented segmented--sub" id="seg-spread" role="group" aria-label="Skill spread">
+                <button class="seg" id="spread-experts" type="button" data-spread="experts">Experts</button>
+                <button class="seg is-selected" id="spread-mixed" type="button" data-spread="mixed">Mixed</button>
+                <button class="seg" id="spread-novices" type="button" data-spread="novices">Novices</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <div class="variants" id="variant-group">
           <button class="variant-card is-selected" id="variant-1" data-mode="1" type="button">
             <span class="v-mark" aria-hidden="true"></span>
             <span class="v-name">Classic</span>
             <span class="v-desc">Alternating turns, every roll your own — your opponent's dice in full view.</span>
+            <span class="v-unc">
+              <span class="v-bar" id="unc-bar-1" aria-hidden="true">
+                <span class="v-bar-seg v-bar-luck" id="unc-luck-1"></span>
+                <span class="v-bar-seg v-bar-skill" id="unc-skill-1"></span>
+              </span>
+              <span class="v-caption" id="unc-cap-1"></span>
+            </span>
           </button>
           <button class="variant-card" id="variant-2" data-mode="2" type="button">
             <span class="v-mark" aria-hidden="true"></span>
             <span class="v-name">Shared Start</span>
             <span class="v-desc">Play at once, hidden from each other. Each round opens on the very same five dice.</span>
+            <span class="v-unc">
+              <span class="v-bar" id="unc-bar-2" aria-hidden="true">
+                <span class="v-bar-seg v-bar-luck" id="unc-luck-2"></span>
+                <span class="v-bar-seg v-bar-skill" id="unc-skill-2"></span>
+              </span>
+              <span class="v-caption" id="unc-cap-2"></span>
+            </span>
           </button>
           <button class="variant-card" id="variant-3" data-mode="3" type="button">
             <span class="v-mark" aria-hidden="true"></span>
             <span class="v-name">Linked Dice</span>
             <span class="v-desc">Shared start — and every reroll drawn from one common well of dice.</span>
+            <span class="v-unc">
+              <span class="v-bar" id="unc-bar-3" aria-hidden="true">
+                <span class="v-bar-seg v-bar-luck" id="unc-luck-3"></span>
+                <span class="v-bar-seg v-bar-skill" id="unc-skill-3"></span>
+              </span>
+              <span class="v-caption" id="unc-cap-3"></span>
+            </span>
           </button>
         </div>
       </section>

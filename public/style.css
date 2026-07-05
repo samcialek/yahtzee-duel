@@ -240,6 +240,77 @@ input  { font-family: inherit; color: inherit; }
 /* Locked (joiner) variant group */
 .variants.is-locked { opacity: 0.5; pointer-events: none; filter: grayscale(0.3); }
 
+/* Luck-vs-skill — step-head explainer, legend & spread selector ----------- */
+.unc-intro { margin-bottom: 16px; }
+.unc-explain {
+  margin: 0 0 14px;
+  max-width: 54ch;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.unc-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 22px;
+}
+.unc-legend { display: inline-flex; align-items: center; gap: 1.2em; }
+.unc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.unc-sw { width: 11px; height: 4px; border-radius: 999px; }
+.unc-sw--luck  { background: var(--muted); }
+.unc-sw--skill { background: var(--accent); }
+
+.unc-spread { display: inline-flex; align-items: center; gap: 12px; }
+.unc-spread-label {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Per-card luck/skill readout — sits under .v-desc, aligned to column 2 ---- */
+.v-unc {
+  grid-column: 2;
+  margin-top: 0.9em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55em;
+}
+.v-bar {
+  display: flex;
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--hairline);
+}
+.v-bar-seg { height: 100%; transition: width 0.45s var(--ease); }
+.v-bar-luck  { background: var(--muted); }
+.v-bar-skill { background: var(--accent); }
+.v-caption {
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  min-height: 0.9em;
+}
+.v-caption .luck  { color: var(--muted); }
+.v-caption .skill { color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) { .v-bar-seg { transition: none; } }
+
 /* Text inputs ------------------------------------------------------------ */
 .text-input {
   width: 100%;
