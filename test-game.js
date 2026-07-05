@@ -1,5 +1,5 @@
 // test-game.js — dependency-free node smoke test for public/shared/game.js
-// Run: node C:/Users/samci/yahtzee/test-game.js
+// Run: node test-game.js
 
 import assert from 'node:assert/strict';
 import {

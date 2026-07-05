@@ -31,7 +31,7 @@ runs on :3000. Not yet deployed to a public host (see **Deployment**).
 ## Start here (runbook)
 
 ```
-cd C:/Users/samci/yahtzee
+cd yahtzee-duel
 npm install          # installs the single dependency, ws
 npm start            # node server.js — serves on http://localhost:3000
 ```

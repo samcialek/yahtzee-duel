@@ -1,5 +1,5 @@
 // test-game-edge.js — ADVERSARIAL edge-case suite for public/shared/game.js
-// Run: node C:/Users/samci/yahtzee/test-game-edge.js
+// Run: node test-game-edge.js
 //
 // Goal: try HARD to break the foundation. Covers every case the verification
 // task enumerates, PLUS an independent reference implementation of the joker

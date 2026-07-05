@@ -35,7 +35,7 @@ estimate for the skill level of the table. The numbers are precomputed offline
 ## Running it
 
 ```
-cd C:/Users/samci/yahtzee
+cd yahtzee-duel
 npm install
 npm start
 ```
