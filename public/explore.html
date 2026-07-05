@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Strategy Explorer &mdash; Yahtzee Duel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* ==================== explore.html — page-scoped block ====================
+       Everything here extends style.css tokens; no new colors, no new fonts. */
+
+    .exp {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: clamp(24px, 4vh, 48px) var(--gutter) 90px;
+    }
+
+    .exp-head {
+      display: flex;
+      align-items: center;
+      gap: 0.9em;
+      padding-bottom: 1em;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .exp-head .wordmark { text-decoration: none; color: inherit; }
+    .exp-head .wordmark:hover em { text-decoration: underline; text-underline-offset: 3px; }
+    .exp-table-note {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .exp-masthead { margin: clamp(26px, 5vh, 46px) 0 clamp(26px, 4vh, 40px); }
+    .exp-title {
+      margin: 0.24em 0 0;
+      font-weight: 600;
+      font-size: clamp(2.4rem, 6.5vw, 4rem);
+      line-height: 0.96;
+      letter-spacing: -0.02em;
+      font-variation-settings: "opsz" 144, "SOFT" 0, "WONK" 0;
+    }
+    .exp-title em { font-style: italic; font-weight: 500; color: var(--accent); }
+    .exp .dek { max-width: 56ch; }
+
+    /* Loading / error states ------------------------------------------------ */
+    .exp-loading, .exp-error {
+      margin: 3rem 0;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .exp-loading { color: var(--muted); }
+    .exp-error { color: var(--accent); text-transform: none; letter-spacing: 0.04em; line-height: 1.7; }
+
+    /* Two-column worksheet -------------------------------------------------- */
+    .exp-grid {
+      display: grid;
+      grid-template-columns: minmax(300px, 5fr) minmax(340px, 6fr);
+      gap: clamp(28px, 4.5vw, 72px);
+      align-items: start;
+    }
+    .exp .step-head { margin: 2.2rem 0 0.9rem; }
+    .exp .step-head:first-child { margin-top: 0; }
+
+    .exp-hint {
+      margin: -0.4rem 0 0.8rem;
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* Category toggles ------------------------------------------------------ */
+    .exp-cats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 22px;
+      border-top: 1px solid var(--hairline);
+    }
+    .exp-cat {
+      display: flex;
+      align-items: center;
+      gap: 0.65em;
+      appearance: none;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--hairline);
+      border-radius: 0;
+      padding: 0.52em 0.15em;
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      letter-spacing: 0.04em;
+      color: var(--ink);
+      text-align: left;
+      transition: background 0.15s var(--ease), color 0.15s var(--ease);
+    }
+    .exp-cat:hover { background: var(--ink-soft); }
+    .exp-cat .mark {
+      flex: none;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      border: 1px solid var(--muted);
+      transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+    }
+    .exp-cat.is-filled .mark { background: var(--ink); border-color: var(--ink); }
+    .exp-cat.is-filled .name {
+      color: var(--muted);
+      text-decoration: line-through;
+      text-decoration-thickness: 1px;
+    }
+
+    /* Upper subtotal + yz fields -------------------------------------------- */
+    .exp-field {
+      display: flex;
+      align-items: baseline;
+      gap: 1em;
+      padding: 0.75em 0.15em;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .exp-field-label {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink);
+    }
+    #input-up {
+      width: 4.5ch;
+      margin-left: auto;
+      appearance: textfield;
+      background: transparent;
+      border: none;
+      border-bottom: 1.5px solid var(--hairline);
+      border-radius: 0;
+      padding: 0.1em 0.1em;
+      font-family: var(--mono);
+      font-size: 1.05rem;
+      font-weight: 500;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      transition: border-color 0.2s var(--ease);
+    }
+    #input-up:focus { outline: none; border-bottom-color: var(--accent); }
+    #input-up:disabled { color: var(--muted); border-bottom-color: transparent; }
+    #input-up::-webkit-outer-spin-button, #input-up::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+    .exp-note {
+      margin: 0.5em 0 0;
+      min-height: 1.2em;
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .exp-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 0.65em;
+      appearance: none;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--hairline);
+      border-radius: 0;
+      padding: 0.75em 0.15em;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink);
+      text-align: left;
+      transition: opacity 0.2s var(--ease);
+    }
+    .exp-toggle .mark {
+      flex: none;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      border: 1px solid var(--muted);
+      transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+    }
+    .exp-toggle.is-on .mark { background: var(--accent); border-color: var(--accent); }
+    .exp-toggle:disabled { opacity: 0.34; cursor: default; }
+
+    /* Dice pickers ----------------------------------------------------------- */
+    .exp-dice { display: flex; gap: 10px; flex-wrap: wrap; }
+    .exp .die { --face: 54px; border-radius: 11px; padding: 8px; }
+    .exp .die i { width: 8px; height: 8px; }
+    .exp .die[data-v="0"] { cursor: pointer; }
+    .exp .die[data-v="0"]:hover { border-color: var(--muted); }
+    .exp-dice-row { display: flex; align-items: center; gap: 14px; }
+    .exp-clear {
+      appearance: none;
+      background: transparent;
+      border: none;
+      padding: 0.3em 0.1em;
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--hairline);
+      transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+    }
+    .exp-clear:hover { color: var(--accent); border-color: var(--accent); }
+    .exp-rolls { display: flex; align-items: center; gap: 1em; margin-top: 1.3rem; }
+    .exp-rolls .seg { padding: 0.5em 1.3em; }
+
+    /* Output column ---------------------------------------------------------- */
+    .exp-ev-block { padding: 0.2em 0 0.4em; }
+    .exp-ev-big {
+      margin: 0;
+      font-family: var(--serif);
+      font-weight: 600;
+      font-size: clamp(2.8rem, 7vw, 4rem);
+      line-height: 1;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+      font-variation-settings: "opsz" 144;
+    }
+    .exp-ev-sub {
+      margin: 0.55em 0 0;
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .exp-best {
+      margin-top: 1.2rem;
+      padding: 0.75em 1em;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      line-height: 1.5;
+    }
+    .exp-best::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 0.8em;
+      border-radius: 50%;
+      background: var(--accent);
+      vertical-align: middle;
+    }
+
+    .exp-panel { margin-top: 2rem; }
+    .exp-panel-head {
+      display: flex;
+      align-items: baseline;
+      gap: 0.8em;
+      padding-bottom: 0.55em;
+      border-bottom: 1.5px solid var(--ink);
+    }
+    .exp-panel-title {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    .exp-panel-meta {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .exp-row {
+      display: flex;
+      align-items: center;
+      gap: 0.8em;
+      padding: 0.48em 0.15em;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .exp-rank {
+      flex: none;
+      width: 2.2ch;
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .exp-keep { display: flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; }
+    .kd {
+      width: 21px;
+      height: 21px;
+      display: grid;
+      place-items: center;
+      background: var(--dice);
+      border: 1px solid var(--hairline);
+      border-radius: 5px;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+    .exp-tag {
+      margin-left: 0.35em;
+      font-family: var(--mono);
+      font-style: normal;
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .exp-cat-name { font-family: var(--mono); font-size: 0.76rem; letter-spacing: 0.04em; }
+    .exp-pts {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .exp-delta {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 5.5ch;
+      text-align: right;
+    }
+    .exp-ev {
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      min-width: 6.5ch;
+      text-align: right;
+    }
+    .exp-keep + .exp-delta, .exp-pts + .exp-delta { margin-left: auto; }
+    .exp-keep + .exp-delta { margin-left: auto; }
+
+    /* best row — the one vermillion moment per list */
+    .exp-row.is-best { border-bottom-color: var(--accent); }
+    .exp-row.is-best .exp-rank,
+    .exp-row.is-best .exp-ev,
+    .exp-row.is-best .exp-cat-name,
+    .exp-row.is-best .exp-tag { color: var(--accent); }
+    .exp-row.is-best .kd { border-color: var(--accent); color: var(--accent); }
+
+    /* joker-blocked — dimmed like .sc-row--disallowed */
+    .exp-row.is-illegal { opacity: 0.34; }
+
+    .exp-gap {
+      padding: 0.15em 0.15em 0.25em;
+      border-bottom: 1px solid var(--hairline);
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--hairline);
+      letter-spacing: 0.4em;
+    }
+
+    .exp .colophon { margin-top: clamp(40px, 7vh, 64px); }
+    .exp .colophon a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--hairline); }
+    .exp .colophon a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+    @media (max-width: 860px) {
+      .exp-grid { grid-template-columns: 1fr; }
+      .exp-cats { grid-template-columns: 1fr; }
+      .exp-table-note { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="exp">
+    <header class="exp-head">
+      <a class="wordmark" href="./">Yahtzee <em>Duel</em></a>
+      <span class="chip">Solver</span>
+      <span class="head-spacer"></span>
+      <span class="exp-table-note" id="table-note"></span>
+    </header>
+
+    <section class="exp-masthead">
+      <p class="kicker">Exact dynamic programming &middot; every state solved</p>
+      <h1 class="exp-title">Strategy <em>Explorer</em></h1>
+      <p class="dek">Set up any position — filled categories, upper subtotal, dice, rolls left — and read off the provably optimal play with its expected value.</p>
+    </section>
+
+    <p class="exp-loading" id="loading">Loading strategy table<span class="ellipsis"><i>.</i><i>.</i><i>.</i></span></p>
+    <div class="exp-error" id="load-error" hidden></div>
+
+    <div class="exp-grid" id="explorer-main" hidden>
+      <!-- ============================ CONTROLS ============================ -->
+      <section>
+        <div class="step-head">
+          <span class="step-num">01</span>
+          <span class="step-label">Scorecard</span>
+        </div>
+        <p class="exp-hint">Tap a category to cross it off as filled</p>
+        <div class="exp-cats" id="cat-toggles">
+          <button class="exp-cat" id="cat-ones" data-cat="ones" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Aces</span></button>
+          <button class="exp-cat" id="cat-twos" data-cat="twos" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Twos</span></button>
+          <button class="exp-cat" id="cat-threes" data-cat="threes" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Threes</span></button>
+          <button class="exp-cat" id="cat-fours" data-cat="fours" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Fours</span></button>
+          <button class="exp-cat" id="cat-fives" data-cat="fives" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Fives</span></button>
+          <button class="exp-cat" id="cat-sixes" data-cat="sixes" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Sixes</span></button>
+          <button class="exp-cat" id="cat-threeKind" data-cat="threeKind" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Three of a Kind</span></button>
+          <button class="exp-cat" id="cat-fourKind" data-cat="fourKind" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Four of a Kind</span></button>
+          <button class="exp-cat" id="cat-fullHouse" data-cat="fullHouse" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Full House</span></button>
+          <button class="exp-cat" id="cat-smallStraight" data-cat="smallStraight" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Small Straight</span></button>
+          <button class="exp-cat" id="cat-largeStraight" data-cat="largeStraight" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Large Straight</span></button>
+          <button class="exp-cat" id="cat-yahtzee" data-cat="yahtzee" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Yahtzee</span></button>
+          <button class="exp-cat" id="cat-chance" data-cat="chance" type="button" aria-pressed="false"><span class="mark"></span><span class="name">Chance</span></button>
+        </div>
+
+        <div class="exp-field">
+          <label class="exp-field-label" for="input-up">Upper subtotal <span style="color:var(--muted)">0&ndash;63</span></label>
+          <input id="input-up" type="number" inputmode="numeric" min="0" max="63" step="1" value="0" aria-describedby="up-note">
+        </div>
+        <button class="exp-toggle" id="toggle-yz" type="button" aria-pressed="false" disabled>
+          <span class="mark"></span><span>Yahtzee box holds 50</span>
+        </button>
+        <p class="exp-note" id="up-note"></p>
+
+        <div class="step-head">
+          <span class="step-num">02</span>
+          <span class="step-label">Dice</span>
+        </div>
+        <p class="exp-hint">Click a die to cycle 1&ndash;6, past 6 to blank</p>
+        <div class="exp-dice-row">
+          <div class="exp-dice" id="dice-pickers">
+            <button class="die" id="pick-0" data-v="0" type="button" aria-label="Die 1"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+            <button class="die" id="pick-1" data-v="0" type="button" aria-label="Die 2"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+            <button class="die" id="pick-2" data-v="0" type="button" aria-label="Die 3"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+            <button class="die" id="pick-3" data-v="0" type="button" aria-label="Die 4"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+            <button class="die" id="pick-4" data-v="0" type="button" aria-label="Die 5"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+          </div>
+          <button class="exp-clear" id="btn-clear-dice" type="button">Clear</button>
+        </div>
+        <div class="exp-rolls">
+          <span class="exp-field-label">Rolls left</span>
+          <div class="segmented" id="seg-rolls" role="group" aria-label="Rolls left">
+            <button class="seg is-selected" id="rolls-2" data-rolls="2" type="button">2</button>
+            <button class="seg" id="rolls-1" data-rolls="1" type="button">1</button>
+            <button class="seg" id="rolls-0" data-rolls="0" type="button">0</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ ANALYSIS ============================ -->
+      <section>
+        <div class="step-head">
+          <span class="step-num">03</span>
+          <span class="step-label">Optimal play</span>
+        </div>
+        <div class="exp-ev-block">
+          <p class="exp-ev-big" id="state-ev">&mdash;</p>
+          <p class="exp-ev-sub" id="state-ev-sub">Expected points to come, before rolling</p>
+        </div>
+        <div class="exp-best" id="best-line" hidden></div>
+
+        <div class="exp-panel" id="keeps-panel">
+          <div class="exp-panel-head">
+            <span class="exp-panel-title">Keep options</span>
+            <span class="exp-panel-meta" id="keeps-meta"></span>
+          </div>
+          <div id="keeps-list"></div>
+          <p class="exp-note" id="keeps-note"></p>
+        </div>
+
+        <div class="exp-panel" id="cats-panel">
+          <div class="exp-panel-head">
+            <span class="exp-panel-title">Score now</span>
+            <span class="exp-panel-meta" id="cats-meta"></span>
+          </div>
+          <div id="cats-list"></div>
+          <p class="exp-note" id="cats-note"></p>
+        </div>
+      </section>
+    </div>
+
+    <p class="colophon">Values from strategy.bin &middot; exact expectimax, no simulation &middot; <a href="./">back to the game</a></p>
+  </main>
+
+  <script type="module" src="js/explore.js"></script>
+</body>
+</html>

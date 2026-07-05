@@ -1,0 +1,12 @@
+{
+  "name": "yahtzee-duel",
+  "version": "1.0.0",
+  "description": "Minimalist multiplayer Yahtzee — classic, shared-start, and linked-dice variants",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yahtzee Duel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!--
+  ============================================================================
+  DOM CONTRACT  —  stable ids for public/js/app.js to bind to.
+  index.html holds ALL screens in one document. app.js shows exactly one of the
+  three main screens at a time and toggles overlays on top.
+  ----------------------------------------------------------------------------
+  VISIBILITY CONVENTIONS (app.js drives these):
+    * Main screens: elements with class ".screen". Show one by adding the class
+      ".is-active" (removes it from the others). Home is active on load.
+        #screen-home   #screen-lobby   #screen-game
+    * End overlay:  #overlay-end  — class ".is-active" shows it above the game.
+    * Analysis overlay: #overlay-analysis — same convention; swapped with the
+      end overlay by #btn-analysis / #btn-analysis-back.
+    * Error toast:  #error-toast  — class ".is-visible" slides it in; set the
+      message text on #error-toast-msg first. Auto-hide by removing the class.
+    * Simple show/hide of sub-elements uses the HTML [hidden] attribute
+      (globally forced to display:none). app.js toggles [hidden] on:
+        #actions-machine / #actions-friend  (swap by Opponent choice)
+        #ai-strength                          (Machine strength sub-toggle; Machine only)
+        #variant-host-note                    (show when joining a friend's room)
+        #dice-label                           (variant 1 "whose dice" label)
+        #end-rematch-note                     (multiplayer "waiting" note)
+    * Selected/active state (toggle class ".is-selected" / ".is-active"):
+        #opp-machine / #opp-friend            segmented Opponent toggle
+        #ai-standard / #ai-perfect            segmented Machine-strength sub-toggle
+        #variant-1 / #variant-2 / #variant-3  variant option cards
+        #variant-group                        add ".is-locked" for joiners
+        #you-dot / #opp-dot                   active-player accent dot
+    * Loading state: #btn-start gets class ".is-loading" (and [disabled]) while
+      the Perfect strategy table is being fetched; both removed afterwards.
+  ----------------------------------------------------------------------------
+  HOME  (#screen-home)
+    #opp-machine        button — Opponent = Machine (AI)
+    #opp-friend         button — Opponent = Friend (live room)
+    #ai-strength        wrapper — Machine strength sub-toggle (hidden when Friend chosen)
+    #ai-standard          button — heuristic AI (ai.js)
+    #ai-perfect           button — optimal-policy AI (fetches /strategy.bin on Start)
+    #variant-group      wrapper around the three variant cards (".is-locked" dims all)
+    #variant-1          card — Classic      (data-mode="1")
+    #variant-2          card — Shared Start  (data-mode="2")
+    #variant-3          card — Linked Dice   (data-mode="3")
+    #variant-host-note  "Set by host" note (shown to joiners)
+    #input-name         text input — player name
+    #actions-machine    wrapper: shown when Machine chosen
+    #btn-start            button — begin an AI game
+    #actions-friend     wrapper: shown when Friend chosen
+    #btn-create           button — create a room
+    #input-code           text input — 4-letter room code (auto-uppercased by app.js)
+    #btn-join             button — join with the entered code
+  LOBBY  (#screen-lobby)
+    #lobby-code         giant room-code display
+    #btn-cancel         button — cancel / return home
+  GAME  (#screen-game)
+    header:
+      #variant-chip     variant name chip (e.g. "Shared Start")
+      #round-indicator  "Round n / 13"
+      #btn-leave        button — leave the game
+    your scorecard container:
+      #scorecard-you    (data-side="you")  — update values in place, do NOT replace innerHTML
+        #you-name         player name
+        #you-dot          active-player accent dot (class ".is-active")
+        #you-progress     per-player "Round n/13" (variants 2/3)
+    opponent scorecard container:
+      #scorecard-opp    (data-side="opp")
+        #opp-name / #opp-dot / #opp-progress   (same as above)
+    center column:
+      #status-line      main status (Fraunces)
+      #dice-tray        holds the five dice
+      #die-0 … #die-4   the five dice. Set data-v="1".."6" for a face, data-v="0"
+                        (or class ".is-empty") for a pre-roll blank die.
+                        Held: toggle class ".held". Tumble: add class ".tumbling"
+                        (with an optional per-die style.animationDelay), remove on
+                        animationend. Only tumble dice in lastRoll.mask, on new seq.
+      #dice-label       "whose dice" label (variant 1)
+      #btn-roll         Roll button
+      #rolls-left       container of the three rolls-left dots
+      #roll-dot-0 … #roll-dot-2   dots; mark spent ones with class ".is-spent"
+      #sub-status       secondary status / variant roll chip (mono, muted)
+    SCORECARD ROW CONTRACT (identical inside both #scorecard-you / #scorecard-opp):
+      Each category row is  .sc-row[data-cat="<cat>"]  with a .sc-label and a
+      .sc-value span.  <cat> ∈ ones,twos,threes,fours,fives,sixes, threeKind,
+      fourKind,fullHouse,smallStraight,largeStraight,yahtzee,chance.
+      Derived rows:  .sc-row[data-row="upper-sum" | "upper-bonus" | "yahtzee-bonus" | "total"].
+      app.js sets .sc-value textContent and toggles row modifier classes:
+        .sc-row--open        open & scorable  → value renders vermillion (potential)
+        .sc-row--disallowed  joker-forbidden  → dimmed, unclickable
+        .sc-row--filled      already scored    → value in ink
+      Bind clicks to open rows via their data-cat.
+  END OVERLAY  (#overlay-end)
+    #end-verdict        Fraunces verdict ("You win." / "You lose." / "Dead heat.")
+    #end-you-name / #end-you-total    your name + final total
+    #end-opp-name / #end-opp-total    opponent name + final total
+    #btn-rematch        button — vote rematch
+    #btn-analysis       button — open the post-game decision-analysis panel
+                        (lazy-loads /strategy.bin on first click)
+    #btn-newgame        button — return home / new game
+    #end-rematch-note   "waiting for opponent" note (multiplayer)
+  ANALYSIS OVERLAY  (#overlay-analysis)  — class ".is-active" shows it; app.js
+    swaps it with #overlay-end (Analysis button opens it, Back returns).
+    #analysis-content   container renderAnalysis() fills (also holds the
+                        loading / failure status line, class ".an-status")
+    #btn-analysis-back  button — close the panel, return to the end overlay
+  TOAST
+    #error-toast        error toast container (class ".is-visible")
+    #error-toast-msg    the message text
+  ============================================================================
+-->
+
+  <!-- ================================ HOME ================================ -->
+  <main class="screen home is-active" id="screen-home">
+    <div class="home-inner">
+      <header class="masthead reveal">
+        <p class="kicker">Two-player dice &middot; paper &amp; ink</p>
+        <h1 class="title">Yahtzee <em>Duel</em></h1>
+        <p class="dek">A quiet contest of luck and nerve — against the machine, or a friend across a four-letter code.</p>
+      </header>
+
+      <section class="step reveal">
+        <div class="step-head">
+          <span class="step-num">01</span>
+          <span class="step-label">Opponent</span>
+        </div>
+        <div class="segmented" id="seg-opponent" role="group" aria-label="Opponent">
+          <button class="seg is-selected" id="opp-machine" type="button">Machine</button>
+          <button class="seg" id="opp-friend" type="button">Friend</button>
+        </div>
+        <div class="sub-toggle" id="ai-strength">
+          <span class="sub-toggle-label">Machine plays</span>
+          <div class="segmented segmented--sub" id="seg-ai" role="group" aria-label="Machine strength">
+            <button class="seg is-selected" id="ai-standard" type="button">Standard</button>
+            <button class="seg" id="ai-perfect" type="button">Perfect</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="step reveal">
+        <div class="step-head">
+          <span class="step-num">02</span>
+          <span class="step-label">Variant</span>
+          <span class="host-note" id="variant-host-note" hidden>Set by host</span>
+        </div>
+        <div class="variants" id="variant-group">
+          <button class="variant-card is-selected" id="variant-1" data-mode="1" type="button">
+            <span class="v-mark" aria-hidden="true"></span>
+            <span class="v-name">Classic</span>
+            <span class="v-desc">Alternating turns, every roll your own — your opponent's dice in full view.</span>
+          </button>
+          <button class="variant-card" id="variant-2" data-mode="2" type="button">
+            <span class="v-mark" aria-hidden="true"></span>
+            <span class="v-name">Shared Start</span>
+            <span class="v-desc">Play at once, hidden from each other. Each round opens on the very same five dice.</span>
+          </button>
+          <button class="variant-card" id="variant-3" data-mode="3" type="button">
+            <span class="v-mark" aria-hidden="true"></span>
+            <span class="v-name">Linked Dice</span>
+            <span class="v-desc">Shared start — and every reroll drawn from one common well of dice.</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="step reveal">
+        <div class="step-head">
+          <span class="step-num">03</span>
+          <span class="step-label">Name</span>
+        </div>
+        <input class="text-input" id="input-name" type="text" maxlength="16" placeholder="Your name" autocomplete="off">
+      </section>
+
+      <section class="actions reveal">
+        <div class="action-set" id="actions-machine">
+          <button class="btn btn--primary btn--wide" id="btn-start" type="button">Start game</button>
+        </div>
+        <div class="action-set" id="actions-friend" hidden>
+          <button class="btn btn--primary btn--wide" id="btn-create" type="button">Create a room</button>
+          <div class="join-row">
+            <input class="text-input code-input" id="input-code" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Room code">
+            <button class="btn btn--ghost" id="btn-join" type="button">Join</button>
+          </div>
+        </div>
+      </section>
+
+      <p class="colophon reveal">Fraunces &amp; IBM&nbsp;Plex&nbsp;Mono &middot; no accounts, no ads &middot; <a href="explore.html">Strategy explorer</a></p>
+    </div>
+  </main>
+
+  <!-- =============================== LOBBY =============================== -->
+  <section class="screen lobby" id="screen-lobby">
+    <div class="lobby-inner">
+      <p class="kicker">Room open</p>
+      <div class="lobby-code" id="lobby-code">&mdash;&mdash;&mdash;&mdash;</div>
+      <p class="lobby-share">Share this code with your opponent.</p>
+      <p class="waiting">Waiting for a challenger<span class="ellipsis"><i>.</i><i>.</i><i>.</i></span></p>
+      <button class="btn btn--ghost" id="btn-cancel" type="button">Cancel</button>
+    </div>
+  </section>
+
+  <!-- =============================== GAME =============================== -->
+  <section class="screen game" id="screen-game">
+    <header class="game-head">
+      <span class="wordmark">Yahtzee <em>Duel</em></span>
+      <span class="chip" id="variant-chip">Classic</span>
+      <span class="head-spacer"></span>
+      <span class="round" id="round-indicator">Round 1 / 13</span>
+      <button class="btn btn--ghost btn--sm" id="btn-leave" type="button">Leave</button>
+    </header>
+
+    <div class="game-main">
+      <!-- YOUR scorecard -->
+      <aside class="scorecard" id="scorecard-you" data-side="you">
+        <div class="sc-head">
+          <span class="sc-dot" id="you-dot"></span>
+          <span class="sc-name" id="you-name">You</span>
+          <span class="sc-progress" id="you-progress"></span>
+        </div>
+        <div class="sc-body">
+          <div class="sc-row" data-cat="ones"><span class="sc-label">Aces</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="twos"><span class="sc-label">Twos</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="threes"><span class="sc-label">Threes</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="fours"><span class="sc-label">Fours</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="fives"><span class="sc-label">Fives</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="sixes"><span class="sc-label">Sixes</span><span class="sc-value"></span></div>
+          <div class="sc-row sc-row--section" data-row="upper-sum"><span class="sc-label">Upper Total</span><span class="sc-value"></span></div>
+          <div class="sc-row sc-row--section" data-row="upper-bonus"><span class="sc-label">Bonus <em>63 &rarr; +35</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="threeKind"><span class="sc-label">Three of a Kind</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="fourKind"><span class="sc-label">Four of a Kind</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="fullHouse"><span class="sc-label">Full House <em>25</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="smallStraight"><span class="sc-label">Small Straight <em>30</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="largeStraight"><span class="sc-label">Large Straight <em>40</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="yahtzee"><span class="sc-label">Yahtzee <em>50</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="chance"><span class="sc-label">Chance</span><span class="sc-value"></span></div>
+          <div class="sc-row sc-row--section" data-row="yahtzee-bonus"><span class="sc-label">Yahtzee Bonus <em>+100</em></span><span class="sc-value"></span></div>
+          <div class="sc-row sc-row--total" data-row="total"><span class="sc-label">Total</span><span class="sc-value"></span></div>
+        </div>
+      </aside>
+
+      <!-- CENTER -->
+      <section class="game-center" id="game-center">
+        <p class="status" id="status-line">Your turn — roll.</p>
+        <div class="tray" id="dice-tray">
+          <button class="die is-empty" id="die-0" data-v="0" type="button" aria-label="Die 1"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+          <button class="die is-empty" id="die-1" data-v="0" type="button" aria-label="Die 2"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+          <button class="die is-empty" id="die-2" data-v="0" type="button" aria-label="Die 3"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+          <button class="die is-empty" id="die-3" data-v="0" type="button" aria-label="Die 4"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+          <button class="die is-empty" id="die-4" data-v="0" type="button" aria-label="Die 5"><i></i><i></i><i></i><i></i><i></i><i></i></button>
+        </div>
+        <span class="dice-label" id="dice-label" hidden></span>
+        <div class="controls">
+          <button class="roll-pill" id="btn-roll" type="button">Roll</button>
+          <div class="rolls-left" id="rolls-left" aria-label="Rolls left">
+            <span class="roll-dot" id="roll-dot-0"></span>
+            <span class="roll-dot" id="roll-dot-1"></span>
+            <span class="roll-dot" id="roll-dot-2"></span>
+          </div>
+        </div>
+        <p class="sub-status" id="sub-status"></p>
+      </section>
+
+      <!-- OPPONENT scorecard -->
+      <aside class="scorecard" id="scorecard-opp" data-side="opp">
+        <div class="sc-head">
+          <span class="sc-dot" id="opp-dot"></span>
+          <span class="sc-name" id="opp-name">Opponent</span>
+          <span class="sc-progress" id="opp-progress"></span>
+        </div>
+        <div class="sc-body">
+          <div class="sc-row" data-cat="ones"><span class="sc-label">Aces</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="twos"><span class="sc-label">Twos</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="threes"><span class="sc-label">Threes</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="fours"><span class="sc-label">Fours</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="fives"><span class="sc-label">Fives</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="sixes"><span class="sc-label">Sixes</span><span class="sc-value"></span></div>
+          <div class="sc-row sc-row--section" data-row="upper-sum"><span class="sc-label">Upper Total</span><span class="sc-value"></span></div>
+          <div class="sc-row sc-row--section" data-row="upper-bonus"><span class="sc-label">Bonus <em>63 &rarr; +35</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="threeKind"><span class="sc-label">Three of a Kind</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="fourKind"><span class="sc-label">Four of a Kind</span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="fullHouse"><span class="sc-label">Full House <em>25</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="smallStraight"><span class="sc-label">Small Straight <em>30</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="largeStraight"><span class="sc-label">Large Straight <em>40</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="yahtzee"><span class="sc-label">Yahtzee <em>50</em></span><span class="sc-value"></span></div>
+          <div class="sc-row" data-cat="chance"><span class="sc-label">Chance</span><span class="sc-value"></span></div>
+          <div class="sc-row sc-row--section" data-row="yahtzee-bonus"><span class="sc-label">Yahtzee Bonus <em>+100</em></span><span class="sc-value"></span></div>
+          <div class="sc-row sc-row--total" data-row="total"><span class="sc-label">Total</span><span class="sc-value"></span></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============================ END OVERLAY ============================ -->
+  <div class="overlay" id="overlay-end">
+    <div class="end-card">
+      <p class="kicker">Final</p>
+      <h2 class="verdict" id="end-verdict">Dead heat.</h2>
+      <div class="end-totals">
+        <div class="end-total">
+          <span class="et-name" id="end-you-name">You</span>
+          <span class="et-score" id="end-you-total">0</span>
+        </div>
+        <div class="end-rule"></div>
+        <div class="end-total">
+          <span class="et-name" id="end-opp-name">Opponent</span>
+          <span class="et-score" id="end-opp-total">0</span>
+        </div>
+      </div>
+      <div class="end-actions">
+        <button class="btn btn--primary btn--wide" id="btn-rematch" type="button">Rematch</button>
+        <button class="btn btn--ghost btn--wide" id="btn-analysis" type="button">Analysis</button>
+        <button class="btn btn--ghost btn--wide" id="btn-newgame" type="button">New game</button>
+      </div>
+      <p class="rematch-note" id="end-rematch-note" hidden>Waiting for your opponent&hellip;</p>
+    </div>
+  </div>
+
+  <!-- ========================= ANALYSIS OVERLAY ========================= -->
+  <div class="overlay" id="overlay-analysis">
+    <div class="an-card">
+      <header class="an-head">
+        <p class="kicker">Post-game</p>
+        <h2 class="an-title">Decision analysis</h2>
+      </header>
+      <div class="an-content" id="analysis-content">
+        <p class="an-status">&hellip;</p>
+      </div>
+      <div class="an-actions">
+        <button class="btn btn--ghost btn--wide" id="btn-analysis-back" type="button">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============================== TOAST =============================== -->
+  <div class="toast" id="error-toast" role="status" aria-live="polite">
+    <span id="error-toast-msg"></span>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

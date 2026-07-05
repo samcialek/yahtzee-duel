@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "widgetCount": 536448,
+  "startEV": 254.58772873449504,
+  "byteLength": 2145792,
+  "generatedWith": "node solver/solve.js"
+}

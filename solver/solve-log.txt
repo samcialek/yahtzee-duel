@@ -1,0 +1,25 @@
+widget count: 536448
+solving (popcount 13 → 0)…
+    5.0%  26933/536448 widgets  elapsed 0m00s  ETA 0m09s
+   10.0%  53648/536448 widgets  elapsed 0m01s  ETA 0m08s
+   15.0%  80590/536448 widgets  elapsed 0m01s  ETA 0m07s
+   20.0%  107414/536448 widgets  elapsed 0m02s  ETA 0m07s
+   25.0%  134172/536448 widgets  elapsed 0m02s  ETA 0m06s
+   30.0%  161000/536448 widgets  elapsed 0m03s  ETA 0m06s
+   35.0%  187790/536448 widgets  elapsed 0m03s  ETA 0m06s
+   40.0%  214634/536448 widgets  elapsed 0m03s  ETA 0m05s
+   45.0%  241404/536448 widgets  elapsed 0m04s  ETA 0m05s
+   50.0%  268274/536448 widgets  elapsed 0m04s  ETA 0m04s
+   55.0%  295054/536448 widgets  elapsed 0m05s  ETA 0m04s
+   60.0%  321963/536448 widgets  elapsed 0m05s  ETA 0m04s
+   65.0%  348755/536448 widgets  elapsed 0m06s  ETA 0m03s
+   70.0%  375626/536448 widgets  elapsed 0m06s  ETA 0m03s
+   75.0%  402348/536448 widgets  elapsed 0m07s  ETA 0m02s
+   80.0%  429178/536448 widgets  elapsed 0m07s  ETA 0m02s
+   85.0%  456017/536448 widgets  elapsed 0m08s  ETA 0m01s
+   90.0%  482898/536448 widgets  elapsed 0m08s  ETA 0m01s
+   95.0%  509684/536448 widgets  elapsed 0m09s  ETA 0m00s
+solve complete in 0m09s (9.2s)
+startEV = 254.587729  (target 254.5896 ± 0.02)
+wrote C:\Users\samci\yahtzee\solver\strategy.bin (2145792 bytes) + C:\Users\samci\yahtzee\solver\strategy-meta.json
+copied both into C:\Users\samci\yahtzee\public\

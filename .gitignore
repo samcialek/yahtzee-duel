@@ -1,0 +1,11 @@
+# Dependencies (restored via `npm install`)
+node_modules/
+
+# Logs & OS cruft
+*.log
+.DS_Store
+Thumbs.db
+
+# Scratch / temp verification files
+_tmp-*
+tmp-*.mjs
