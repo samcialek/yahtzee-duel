@@ -1,0 +1,23 @@
+# Fly.io config for Yahtzee Duel.
+#
+# CRITICAL: this app keeps game rooms in an in-memory Map, so it must run as
+# EXACTLY ONE always-on machine. Two machines would split the room registry
+# (friends couldn't find each other's codes); an autostop would kill in-flight
+# games. Hence: auto_stop_machines = false, min_machines_running = 1, and
+# deploy with `--ha=false` so only a single machine is created.
+
+app = "yahtzee-duel"
+primary_region = "sea"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
