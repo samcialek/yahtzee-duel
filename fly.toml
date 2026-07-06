@@ -7,7 +7,7 @@
 # deploy with `--ha=false` so only a single machine is created.
 
 app = "yahtzee-duel"
-primary_region = "sea"
+primary_region = "sjc"
 
 [build]
 
