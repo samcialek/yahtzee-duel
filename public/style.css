@@ -84,7 +84,7 @@ input  { font-family: inherit; color: inherit; }
 .masthead { margin-bottom: clamp(38px, 6vh, 64px); }
 
 .title {
-  margin: 0.28em 0 0;
+  margin: 0;
   font-weight: 600;
   font-size: clamp(3.4rem, 12vw, 6.4rem);
   line-height: 0.92;
@@ -184,12 +184,79 @@ input  { font-family: inherit; color: inherit; }
 .segmented--sub { padding: 2px; border-color: var(--hairline); }
 .segmented--sub .seg { padding: 0.45em 1.15em; font-size: 0.68rem; }
 
+/* Coach on/off sub-toggle (Machine only) + its explanatory note */
+.coach-sub { flex-wrap: wrap; }
+.coach-note {
+  flex-basis: 100%;
+  margin-top: 2px;
+  max-width: 52ch;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* Step 02 — the Game fork (Duel ↔ Category Claim) ------------------------- */
+.game-select.is-locked { opacity: 0.5; pointer-events: none; filter: grayscale(0.3); }
+/* Two unequal labels ("Duel" / "Category Claim") render as equal halves. */
+#seg-game { grid-auto-columns: 1fr; }
+#seg-game .seg { text-align: center; }
+.game-caption {
+  margin: 12px 0 18px;
+  max-width: 48ch;
+  font-size: 1.02rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+/* Whisper-small tier label naming the lower choice under the fork. */
+.tier-label {
+  margin: 0 0 12px;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Category Claim rules panel — mirrors a .variant-card's frame, no split bar */
+.claim-panel {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 1.15em 1.25em;
+}
+.claim-lead {
+  margin: 0 0 1em;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.claim-rules {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.55em 1.1em;
+  margin: 0;
+}
+.claim-rules dt {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 0.15em;
+}
+.claim-rules dd {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
 /* Start button while the Perfect strategy table loads */
 .btn.is-loading { opacity: 0.65; cursor: progress; }
 
 /* Variant cards ---------------------------------------------------------- */
 .variants { display: grid; gap: 10px; }
 .variant-card {
+  --ml-w: 5.9em;                 /* width of the match-length stat strip (right) */
   position: relative;
   display: grid;
   grid-template-columns: auto 1fr;
@@ -201,6 +268,7 @@ input  { font-family: inherit; color: inherit; }
   border: 1px solid var(--hairline);
   border-radius: 12px;
   padding: 1em 1.15em;
+  padding-right: calc(var(--ml-w) + 1.15em);   /* reserve room for the stat */
   transition: border-color 0.2s var(--ease), background 0.2s var(--ease);
 }
 .variant-card:hover { border-color: var(--muted); }
@@ -237,10 +305,44 @@ input  { font-family: inherit; color: inherit; }
   box-shadow: inset 0 0 0 3px var(--paper);
 }
 
-/* Locked (joiner) variant group */
-.variants.is-locked { opacity: 0.5; pointer-events: none; filter: grayscale(0.3); }
+/* Match-length stat — a divided strip on the right of each variant card:
+   how many games until perfect play is >95% likely to have the higher
+   summed score. */
+.v-matchlen {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--ml-w);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25em;
+  text-align: center;
+  border-left: 1px solid var(--hairline);
+  transition: border-color 0.2s var(--ease);
+}
+.variant-card.is-selected .v-matchlen { border-left-color: var(--accent); }
+.v-ml-num {
+  font-family: var(--mono);
+  font-size: 1.7rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.variant-card.is-selected .v-ml-num { color: var(--accent); }
+.v-ml-cap {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 
-/* Luck-vs-skill — step-head explainer, legend & spread selector ----------- */
+/* Luck-vs-skill — step-head explainer & legend ---------------------------- */
 .unc-intro { margin-bottom: 16px; }
 .unc-explain {
   margin: 0 0 14px;
@@ -271,15 +373,6 @@ input  { font-family: inherit; color: inherit; }
 .unc-sw--luck  { background: var(--muted); }
 .unc-sw--skill { background: var(--accent); }
 
-.unc-spread { display: inline-flex; align-items: center; gap: 12px; }
-.unc-spread-label {
-  font-family: var(--mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
 /* Per-card luck/skill readout — sits under .v-desc, aligned to column 2 ---- */
 .v-unc {
   grid-column: 2;
@@ -300,14 +393,26 @@ input  { font-family: inherit; color: inherit; }
 .v-bar-skill { background: var(--accent); }
 .v-caption {
   font-family: var(--mono);
-  font-size: 0.64rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
   min-height: 0.9em;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5em;
 }
-.v-caption .luck  { color: var(--muted); }
-.v-caption .skill { color: var(--accent); }
+/* Skill leads and is emphasized; luck (the 1−skill remainder) is small and dim. */
+.v-caption .skill {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.72rem;
+}
+.v-caption .luck {
+  color: var(--muted);
+  font-size: 0.5rem;
+  opacity: 0.6;
+}
 
 @media (prefers-reduced-motion: reduce) { .v-bar-seg { transition: none; } }
 
@@ -548,6 +653,15 @@ input  { font-family: inherit; color: inherit; }
 .sc-row--filled .sc-value { color: var(--ink); }
 .sc-row--filled .sc-label { color: var(--muted); }
 
+/* Category Claim: taken by the other player — dead on this card */
+.sc-row--claimed { cursor: default; opacity: 0.38; }
+.sc-row--claimed .sc-label { color: var(--muted); text-decoration: line-through; }
+.sc-row--claimed .sc-value { color: var(--muted); }
+
+/* Category Claim: the contested sudden-death box */
+.sc-row--sudden { background: var(--ink-soft); }
+.sc-row--sudden .sc-label { color: var(--accent); font-weight: 600; }
+
 /* derived / section rows */
 .sc-row--section {
   padding: 0.55em 0.15em;
@@ -739,6 +853,40 @@ input  { font-family: inherit; color: inherit; }
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* Coach panel (training games) — hint + flag controls under the tray --------- */
+.coach {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.2rem;
+}
+.coach-actions { display: flex; gap: 0.6rem; }
+#btn-flag.is-flagged { border-color: var(--accent); color: var(--accent); }
+.coach-hint {
+  margin: 0;
+  min-height: 1.3em;
+  max-width: 34ch;
+  text-align: center;
+  font-size: 1rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.coach-hint:empty { min-height: 0; }
+.coach-hint strong { color: var(--accent); font-weight: 600; }
+.coach-hint .ev {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+/* Coach highlight: the optimal keep-dice get an accent ring; the optimal category
+   row gets an accent edge. Both coexist with .held / .sc-row--open styling. */
+.die--hint { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sc-row--hint { box-shadow: inset 3px 0 0 var(--accent); }
+.sc-row--hint .sc-label { color: var(--accent); }
 
 /* ============================== END OVERLAY ============================= */
 .overlay {

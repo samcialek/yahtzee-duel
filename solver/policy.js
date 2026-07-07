@@ -175,11 +175,16 @@ export class Policy {
    * @param {0|1} yz      1 ⇔ yahtzee box holds 50
    * @param {number[]} dice five faces 1..6, any order
    * @param {0|1|2} rollsLeft rerolls remaining
+   * @param {boolean} [withTurn=false] also compute best.turnEv — the expected
+   *   points scored in THIS turn under optimal play (evaluates the immediate
+   *   scoring reward, dropping the +V(successor) future term, under the same
+   *   optimal decisions). Off by default so the AI/simulation hot path is
+   *   unaffected; the coach passes true to show a per-turn figure.
    * @returns {{
    *   categories: {cat: string, pts: number, ev: number, legal: boolean}[],
    *   keeps: {faces: number[], ev: number}[] | null,
-   *   best: {type:'score', cat: string, pts: number, ev: number}
-   *       | {type:'keep', faces: number[], ev: number},
+   *   best: {type:'score', cat: string, pts: number, ev: number, turnEv?: number}
+   *       | {type:'keep', faces: number[], ev: number, turnEv?: number},
    * }}
    * categories: every OPEN category, desc-sorted by ev (ev = pts + bonuses +
    *   V(successor), computed identically for joker-blocked cats, which carry
@@ -190,7 +195,7 @@ export class Policy {
    * best: 'score' when rollsLeft=0 or scoring now ties/beats every keep
    *   (scoreNowEV ≥ bestKeepEV − TIE_EPS), else the argmax keep.
    */
-  evalTurn(mask, up, yz, dice, rollsLeft) {
+  evalTurn(mask, up, yz, dice, rollsLeft, withTurn = false) {
     if (rollsLeft !== 0 && rollsLeft !== 1 && rollsLeft !== 2) {
       throw new RangeError(`evalTurn: rollsLeft must be 0, 1 or 2: ${rollsLeft}`);
     }
@@ -212,6 +217,9 @@ export class Policy {
     // ---- per-widget successor values (§1 reward), identical to solve.js ----
     const upVal = this._upVal;
     const lowVal = this._lowVal;
+    // Parallel immediate-reward table for the upper cats (this turn's points only:
+    // the score plus the upper-bonus crossing), built only when turn EV is wanted.
+    const upImm = withTurn ? new Float64Array(36) : null;
     for (let c = 0; c < 6; c++) {
       if ((mask >> c) & 1) continue;
       const f = c + 1;
@@ -222,6 +230,7 @@ export class Policy {
         const bonus = (up < 63 && raw >= 63) ? 35 : 0;   // fires exactly on the crossing
         const up2 = raw > 63 ? 63 : raw;
         upVal[c * 6 + cnt] = pts + bonus + V[idOf(m2, up2, yz)];
+        if (withTurn) upImm[c * 6 + cnt] = pts + bonus;
       }
     }
     for (let c = 6; c < NUM_CATS; c++) {
@@ -247,18 +256,29 @@ export class Policy {
       else v = pts + lowVal[c];
       return rollIsYahtzee ? v + bonusAdd : v;
     };
+    // This-turn reward of scoring c at pts (immediate part of catEV, no future V):
+    // upper cats via upImm (score + bonus crossing); yahtzee box & lower = pts;
+    // the extra-Yahtzee +100 rides along whenever the roll is a Yahtzee.
+    const catImm = (c, pts) => {
+      const v = c < 6 ? upImm[c * 6 + pts / (c + 1)] : pts;
+      return rollIsYahtzee ? v + bonusAdd : v;
+    };
 
     // ---- keeps (must run BEFORE the categories block: both use this._pts) ----
     let keeps = null;
     let bestKeepEv = -Infinity;
+    let levelImm = null;      // immediate-reward lattice aligned with `level`, when withTurn
     if (rollsLeft > 0) {
       this._buildMoves(mask);
       const latA = this._latA;
       const movesOff = this._movesOff, movesCat = this._movesCat, movesPts = this._movesPts;
+      // Immediate-reward twin lattice, propagated under the SAME argmax as the
+      // full-EV lattice — so it reports this turn's points along the optimal line.
+      const immA = withTurn ? new Float64Array(NUM_KEEPS) : null;
 
       // S(d) for all 252 rolls
       for (let r = 0; r < NUM_ROLLS; r++) {
-        let s = -Infinity;
+        let s = -Infinity, sImm = 0;
         const e = movesOff[r + 1];
         for (let j = movesOff[r]; j < e; j++) {
           const c = movesCat[j];
@@ -267,41 +287,55 @@ export class Policy {
           if (c < 6) v = upVal[c * 6 + pts / (c + 1)];
           else if (c === 11) v = pts === 50 ? y50 : y0;
           else v = pts + lowVal[c];
-          if (v > s) s = v;
+          if (v > s) { s = v; if (withTurn) sImm = c < 6 ? upImm[c * 6 + pts / (c + 1)] : pts; }
         }
-        if (bonusAdd !== 0 && isYahtzeeArr[ROLL_OFFSET + r] !== 0) s += bonusAdd;
+        if (bonusAdd !== 0 && isYahtzeeArr[ROLL_OFFSET + r] !== 0) { s += bonusAdd; sImm += bonusAdd; }
         latA[ROLL_OFFSET + r] = s;
+        if (withTurn) immA[ROLL_OFFSET + r] = sImm;
       }
       // A2: expected S after filling the keep one die at a time
       for (let k = ROLL_OFFSET - 1; k >= 0; k--) {
         const o = k * 6;
         latA[k] = (latA[childrenFlat[o]] + latA[childrenFlat[o + 1]] + latA[childrenFlat[o + 2]]
                  + latA[childrenFlat[o + 3]] + latA[childrenFlat[o + 4]] + latA[childrenFlat[o + 5]]) * SIXTH;
+        if (withTurn) immA[k] = (immA[childrenFlat[o]] + immA[childrenFlat[o + 1]] + immA[childrenFlat[o + 2]]
+                 + immA[childrenFlat[o + 3]] + immA[childrenFlat[o + 4]] + immA[childrenFlat[o + 5]]) * SIXTH;
       }
       let level = latA;                        // rollsLeft === 1 → keeps valued at A2
+      levelImm = immA;
       if (rollsLeft === 2) {
         const latB = this._latB;
-        // Best2(d) = max over k ⊆ d of A2(k)
+        const immB = withTurn ? new Float64Array(NUM_KEEPS) : null;
+        // Best2(d) = max over k ⊆ d of A2(k); its imm rides the same argmax.
         for (let r = 0; r < NUM_ROLLS; r++) {
           const subs = subsets[ROLL_OFFSET + r];
-          let m = -Infinity;
-          for (let j = 0; j < subs.length; j++) { const v = latA[subs[j]]; if (v > m) m = v; }
+          let m = -Infinity, mImm = 0;
+          for (let j = 0; j < subs.length; j++) {
+            const v = latA[subs[j]];
+            if (v > m) { m = v; if (withTurn) mImm = immA[subs[j]]; }
+          }
           latB[ROLL_OFFSET + r] = m;
+          if (withTurn) immB[ROLL_OFFSET + r] = mImm;
         }
         // A1: expected Best2
         for (let k = ROLL_OFFSET - 1; k >= 0; k--) {
           const o = k * 6;
           latB[k] = (latB[childrenFlat[o]] + latB[childrenFlat[o + 1]] + latB[childrenFlat[o + 2]]
                    + latB[childrenFlat[o + 3]] + latB[childrenFlat[o + 4]] + latB[childrenFlat[o + 5]]) * SIXTH;
+          if (withTurn) immB[k] = (immB[childrenFlat[o]] + immB[childrenFlat[o + 1]] + immB[childrenFlat[o + 2]]
+                   + immB[childrenFlat[o + 3]] + immB[childrenFlat[o + 4]] + immB[childrenFlat[o + 5]]) * SIXTH;
         }
         level = latB;                          // rollsLeft === 2 → keeps valued at A1
+        levelImm = immB;
       }
 
       const subs = subsets[kIdx];
       keeps = new Array(subs.length);
       for (let j = 0; j < subs.length; j++) {
         const ev = level[subs[j]];
-        keeps[j] = { faces: facesOf(subs[j]), ev };
+        const kp = { faces: facesOf(subs[j]), ev };
+        if (withTurn) kp.si = subs[j];         // keep-index into levelImm for turnEv
+        keeps[j] = kp;
         if (ev > bestKeepEv) bestKeepEv = ev;
       }
       // Desc by ev; stable sort keeps the canonical (size asc, lexicographic)
@@ -316,12 +350,14 @@ export class Policy {
     for (let c = 0; c < NUM_CATS; c++) {
       if (((open >> c) & 1) === 0) continue;
       const pts = this._pts[c];
-      categories.push({
+      const cObj = {
         cat: CAT_ORDER[c],
         pts,
         ev: catEV(c, pts),
         legal: ((legal >> c) & 1) !== 0,
-      });
+      };
+      if (withTurn) cObj.ci = c;               // numeric index for catImm(bestCat)
+      categories.push(cObj);
     }
     // Desc by ev; on ties legal before blocked, then CATS order (stable sort).
     categories.sort((a, b) => (b.ev - a.ev) || ((b.legal ? 1 : 0) - (a.legal ? 1 : 0)));
@@ -337,9 +373,13 @@ export class Policy {
     let best;
     if (rollsLeft === 0 || bestCat.ev >= bestKeepEv - TIE_EPS) {
       best = { type: 'score', cat: bestCat.cat, pts: bestCat.pts, ev: bestCat.ev };
+      // Scoring now is deterministic — this turn's value is exactly its immediate reward.
+      if (withTurn) best.turnEv = catImm(bestCat.ci, bestCat.pts);
     } else {
       const bk = keeps[0];
       best = { type: 'keep', faces: bk.faces.slice(), ev: bk.ev };
+      // Expected points this turn if we hold bk and continue optimally.
+      if (withTurn) best.turnEv = levelImm[bk.si];
     }
 
     return { categories, keeps, best };

@@ -1,135 +1,47 @@
 {
-  "method": "Law of total variance on the match margin M=S_A-S_B via nested Monte-Carlo: Aleatory=E_Θ[Var_Ω(M|Θ)] (luck), Epistemic=Var_Θ[E_Ω(M|Θ)] (skill); they sum to Var(M).",
-  "skillModel": "eps-player: solver-optimal move w.p. 1-eps, else a uniformly random legal action (fair coin: score-now→random legal category vs reroll→random keep submask; at 0 rolls left a random legal category).",
+  "method": "Perfect player vs near-perfect player over N games per variant: skill% = 2×(perfect win rate − 50%) clamped to [0,100], luck% = 100 − skill%. Ties count as half a win. 100% win rate ⇒ 100% skill; coin-flip ⇒ 0% skill.",
+  "skillModel": "near-perfect player: takes the highest-EV option unless two or more options are within 4 EV points of the best, in which case it picks uniformly at random among that set. Options = every keep sub-multiset plus every legal score-now category (only legal categories at 0 rolls left).",
   "generatedBy": "solver/uncertainty.js",
-  "generatedAt": "2026-07-05T21:26:51.467Z",
+  "generatedAt": "2026-07-06T20:28:07.516Z",
   "seed": 1,
-  "samples": {
-    "outerSkillPairs": 320,
-    "innerGamesPerPair": 200,
-    "marginsPerCell": 64000
-  },
-  "spreads": [
+  "games": 100000,
+  "tieWindowEV": 4,
+  "variants": [
     {
-      "key": "experts",
-      "label": "Experts",
-      "epsRange": [
-        0,
-        0.15
-      ],
-      "variants": [
-        {
-          "mode": 1,
-          "name": "Classic",
-          "aleatoryPct": 89,
-          "epistemicPct": 11,
-          "aleatoryVar": 6634.3,
-          "epistemicVar": 820.1,
-          "marginStd": 86.13,
-          "rawVar": 7418.7
-        },
-        {
-          "mode": 2,
-          "name": "Shared Start",
-          "aleatoryPct": 88.45,
-          "epistemicPct": 11.55,
-          "aleatoryVar": 6172.9,
-          "epistemicVar": 806.2,
-          "marginStd": 83.34,
-          "rawVar": 6945.8
-        },
-        {
-          "mode": 3,
-          "name": "Linked Dice",
-          "aleatoryPct": 78.49,
-          "epistemicPct": 21.51,
-          "aleatoryVar": 2932.3,
-          "epistemicVar": 803.8,
-          "marginStd": 60.98,
-          "rawVar": 3718.9
-        }
-      ]
+      "mode": 1,
+      "name": "Classic",
+      "luckPct": 40.93,
+      "skillPct": 59.07,
+      "winPct": 79.53,
+      "tiePct": 0.48,
+      "meanMargin": 53.32,
+      "marginStd": 77.75,
+      "pointsGamesTo95": 6,
+      "gamesTo95": 7
     },
     {
-      "key": "mixed",
-      "label": "Mixed",
-      "epsRange": [
-        0,
-        0.6
-      ],
-      "default": true,
-      "variants": [
-        {
-          "mode": 1,
-          "name": "Classic",
-          "aleatoryPct": 48.18,
-          "epistemicPct": 51.82,
-          "aleatoryVar": 4540.7,
-          "epistemicVar": 4884.7,
-          "marginStd": 96.89,
-          "rawVar": 9387.6
-        },
-        {
-          "mode": 2,
-          "name": "Shared Start",
-          "aleatoryPct": 47.11,
-          "epistemicPct": 52.89,
-          "aleatoryVar": 4289.9,
-          "epistemicVar": 4815.5,
-          "marginStd": 95.23,
-          "rawVar": 9069.1
-        },
-        {
-          "mode": 3,
-          "name": "Linked Dice",
-          "aleatoryPct": 41.23,
-          "epistemicPct": 58.77,
-          "aleatoryVar": 3456.7,
-          "epistemicVar": 4926.3,
-          "marginStd": 91.38,
-          "rawVar": 8350.5
-        }
-      ]
+      "mode": 2,
+      "name": "Shared Start",
+      "luckPct": 37.51,
+      "skillPct": 62.49,
+      "winPct": 81.24,
+      "tiePct": 0.48,
+      "meanMargin": 52.93,
+      "marginStd": 72.55,
+      "pointsGamesTo95": 5,
+      "gamesTo95": 7
     },
     {
-      "key": "novices",
-      "label": "Novices",
-      "epsRange": [
-        0.3,
-        0.85
-      ],
-      "variants": [
-        {
-          "mode": 1,
-          "name": "Classic",
-          "aleatoryPct": 62.71,
-          "epistemicPct": 37.29,
-          "aleatoryVar": 2433.5,
-          "epistemicVar": 1447.3,
-          "marginStd": 62.16,
-          "rawVar": 3864.1
-        },
-        {
-          "mode": 2,
-          "name": "Shared Start",
-          "aleatoryPct": 62.67,
-          "epistemicPct": 37.33,
-          "aleatoryVar": 2358.1,
-          "epistemicVar": 1404.8,
-          "marginStd": 61.21,
-          "rawVar": 3746.8
-        },
-        {
-          "mode": 3,
-          "name": "Linked Dice",
-          "aleatoryPct": 61.84,
-          "epistemicPct": 38.16,
-          "aleatoryVar": 2284.1,
-          "epistemicVar": 1409.6,
-          "marginStd": 60.65,
-          "rawVar": 3677.9
-        }
-      ]
+      "mode": 3,
+      "name": "Linked Dice",
+      "luckPct": 26.42,
+      "skillPct": 73.58,
+      "winPct": 86.79,
+      "tiePct": 0.53,
+      "meanMargin": 53.17,
+      "marginStd": 56.04,
+      "pointsGamesTo95": 3,
+      "gamesTo95": 3
     }
   ]
 }

@@ -77,9 +77,10 @@ export class RemoteEngine {
 
   // -- Lobby handshake -------------------------------------------------------
 
-  /** Create a room. Room code is delivered asynchronously via opts.onCreated. */
-  create(name, mode) {
-    this._send({ t: 'create', name, mode });
+  /** Create a room. Room code is delivered asynchronously via opts.onCreated.
+   *  `claim` toggles Category Claim (orthogonal to the variant; host-set). */
+  create(name, mode, claim) {
+    this._send({ t: 'create', name, mode, claim: !!claim });
   }
 
   /** Join an existing room by 4-letter code. Server validates and replies with state/error. */

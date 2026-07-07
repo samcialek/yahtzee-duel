@@ -101,29 +101,64 @@ export function scoreCat(cat, dice) {
 }
 
 // Returns { [openCat]: { pts, allowed } }. `allowed:false` rows render dimmed & unclickable.
-export function potentials(card, dice) {
+// `blocked` (optional, Category Claim): a Set of categories CLAIMED BY THE OPPONENT —
+// they are unavailable to this player and count as "taken" for the joker branching
+// (a box closed by either player is closed for the joker rules too), but they never
+// appear in the result: you cannot score into an opponent-claimed box.
+export function potentials(card, dice, blocked) {
+  const taken = cat => card[cat] !== null || (blocked ? blocked.has(cat) : false);
   const res = {};
-  const joker = isYahtzee(dice) && card.yahtzee !== null;   // yahtzee box already filled (50 OR 0)
+  const joker = isYahtzee(dice) && taken('yahtzee');        // yahtzee box already taken (50, 0, or claimed)
   if (!joker) {
-    for (const cat of CATS) if (card[cat] === null)
+    for (const cat of CATS) if (!taken(cat))
       res[cat] = { pts: scoreCat(cat, dice), allowed: true };
     return res;
   }
   const face = dice[0], upCat = UPPER[face - 1], s = face * 5;
-  const lowerOpen = LOWER.filter(c => c !== 'yahtzee' && card[c] === null);
+  const lowerOpen = LOWER.filter(c => c !== 'yahtzee' && !taken(c));
   const jokerPts = cat =>
     UPPER.includes(cat) ? (cat === upCat ? s : 0)
     : cat === 'fullHouse' ? 25 : cat === 'smallStraight' ? 30
     : cat === 'largeStraight' ? 40 : s;                     // 3-kind / 4-kind / chance = sum
   for (const cat of CATS) {
-    if (card[cat] !== null) continue;
+    if (taken(cat)) continue;
     let allowed;
-    if (card[upCat] === null)      allowed = cat === upCat;         // 1) forced into matching upper box
+    if (!taken(upCat))             allowed = cat === upCat;         // 1) forced into matching upper box
     else if (lowerOpen.length > 0) allowed = lowerOpen.includes(cat); // 2) else any lower box, joker values
     else                           allowed = true;                    // 3) else zero any remaining upper box
     res[cat] = { pts: jokerPts(cat), allowed };
   }
   return res;
+}
+
+// ---------------------------------------------------------------------------
+// Category Claim helpers (orthogonal to the three dice variants)
+// ---------------------------------------------------------------------------
+
+// The set of categories already scored on `card` — i.e. what THIS card's owner has
+// claimed. Pass the OPPONENT's card to build the `blocked` set for potentials().
+export function claimedCats(card) {
+  return new Set(CATS.filter(c => card[c] !== null && card[c] !== undefined));
+}
+
+// Categories still open to BOTH players — the shared pool that remains.
+export function openCats(cardA, cardB) {
+  return CATS.filter(c =>
+    cardA[c] === null || cardA[c] === undefined
+      ? (cardB[c] === null || cardB[c] === undefined)
+      : false);
+}
+
+// Roll-synchronization barrier (Category Claim, simultaneous variants + sudden
+// death): players start each roll together instead of running rolls ahead.
+// `me`/`opp` need only { round, rollsLeft } (PlayerState or its serialized form).
+//   - behind on rounds → free to catch up; ahead → wait for the opponent;
+//   - same round → my next roll k is allowed once the opponent has taken ≥ k−1
+//     rolls (they are at the same decision point) or has already scored/locked
+//     (their rollsLeft was reset or zeroed). Max lead: one roll in flight.
+export function canRollSync(me, opp) {
+  if (me.round !== opp.round) return me.round < opp.round;
+  return (3 - opp.rollsLeft) >= (3 - me.rollsLeft);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +173,11 @@ export class PlayerState {
     this.round = 0;
     this.rollsLeft = 3;
     this.dice = null;
+    // Category Claim: the upper bonus is a shared race — the player whose score
+    // pushes the COMBINED upper total to 63+ is awarded the 35 (claimBonus set by
+    // the room/engine). claimMode switches the upperBonus getter to that award.
+    this.claimMode = false;
+    this.claimBonus = 0;
   }
 
   get upperSum() {
@@ -147,6 +187,7 @@ export class PlayerState {
   }
 
   get upperBonus() {
+    if (this.claimMode) return this.claimBonus;
     return this.upperSum >= 63 ? 35 : 0;
   }
 
@@ -168,9 +209,10 @@ export class PlayerState {
 
   // Validate against potentials(); apply the extra-Yahtzee +100 bonus BEFORE writing
   // the box; write it; advance to the next round. Returns pts, or null if illegal.
-  scoreCategory(cat) {
+  // `blocked` (Category Claim): the opponent's claimed categories — never scorable here.
+  scoreCategory(cat, blocked) {
     if (this.dice === null) return null;
-    const pot = potentials(this.card, this.dice);
+    const pot = potentials(this.card, this.dice, blocked);
     if (!pot[cat] || !pot[cat].allowed) return null;
     const pts = pot[cat].pts;
     if (isYahtzee(this.dice) && this.card.yahtzee === 50) this.yahtzeeBonus += 100;

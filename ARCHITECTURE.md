@@ -40,6 +40,29 @@ app they plug into and points to those documents for the rest.
   3. **Linked Dice** — same as Shared Start, plus rerolls draw from a **shared per-round sequence**:
      if player A rerolls 3 dice and player B rerolls 2 on the same roll number of the same round,
      the first 2 reroll values are identical for both.
+- **Category Claim** — a *separate game*, chosen on the home screen's "Game" fork (Duel ↔ Category
+  Claim), NOT a modifier on a variant. The 13 categories are ONE shared pool — a box scored by
+  either player is dead for both (`potentials(card, dice, blocked)` / `scoreCategory(cat, blocked)`
+  in `shared/game.js`). It plays ONLY on **completely independent dice** (the mode-1 dice mechanic)
+  — forced at the submit boundary (`gamePayload()` in app.js) and again server-side (`handleCreate`
+  coerces any claim room to mode 1). Unlike Classic Duel, it is a **simultaneous race**, not
+  alternating: turn-free (`room.turn`/`this.turn` = null), opponent dice hidden, and run under the
+  `canRollSync` roll barrier so neither player is more than one roll ahead — yet whoever *decides*
+  faster claims a contested box first. Six claims each, then the last box is a simultaneous **sudden
+  death** turn (higher score in the box claims it; tie voids it). The upper bonus is a race: whoever
+  pushes the **combined** upper total to 63+ is awarded the 35 (`PlayerState.claimMode` /
+  `claimBonus`). Implemented symmetrically in `server.js` rooms and `LocalEngine`, whose lockstep AI
+  pump paces the machine at a human-like variable rate (`claimDelay`) so the race is fair. Pinned by
+  `test-claim.js`. (The engine's claim logic is variant-agnostic — it works on any dice mode — but
+  the product only ever surfaces Claim on independent dice.)
+- **Coach (training mode)** — a Machine-only toggle (under the strength control) that layers a coach
+  over **any of the three Duel variants** (it reviews YOUR play, not the machine's; it does not
+  apply to Category Claim). It is a *purely client-side layer in `app.js`* over an ordinary
+  vs-Machine game (the engine is unchanged): on your decision, **Best move** calls
+  the same `policy.evalTurn` (loaded like Perfect AI) and reveals the optimal action + EV, glowing
+  the keep-dice (`.die--hint`) or category row (`.sc-row--hint`); **Flag for review** records the
+  decision key, and at game end **Review flagged** reuses the analysis overlay + `renderAnalysis`
+  over `analysis.subsetReport(analyze(moveLog).decisions filtered to the flagged keys)`.
 - **Extras built on top of the core**: a **post-game decision-analysis ledger** (every keep/score
   decision compared against the optimal one, with EV loss and a running tally — ANALYSIS.md) and a
   standalone **Strategy Explorer** at `/explore.html` (SOLVER.md). Both were added after the core

@@ -19,6 +19,11 @@ import {
   makeShared,
   makeLuck,
   nextDice,
+  potentials,
+  isYahtzee,
+  claimedCats,
+  openCats,
+  canRollSync,
   CATS,
 } from './public/shared/game.js';
 
@@ -142,6 +147,60 @@ function bothDone(room) {
 }
 
 // ---------------------------------------------------------------------------
+// Category Claim (orthogonal to the dice variant, room.claim === true)
+//
+// The 13 categories are ONE shared pool: a box scored by either player is dead
+// for both. Simultaneous variants (2/3) run under the canRollSync barrier so
+// neither player starts a roll the other hasn't reached; Classic keeps strict
+// alternation (the turn order IS the throttle). When one box remains, SUDDEN
+// DEATH: both players play one full turn for it at once, lock in their dice,
+// and the higher score in that box claims it (a tie voids the box). The upper
+// bonus is a race too: whoever pushes the COMBINED upper total to 63+ pockets
+// the 35 (PlayerState.claimBonus).
+// ---------------------------------------------------------------------------
+
+/** Blocked set for player i: every category the opponent has claimed. */
+function blockedFor(room, i) {
+  return claimedCats(room.players[1 - i].ps.card);
+}
+
+/** Award the 35-pt bonus to `idx` if their score just pushed the combined upper total to 63+. */
+function checkUpperRace(room, idx) {
+  if (room.upperAwarded) return;
+  const combined = room.players[0].ps.upperSum + room.players[1].ps.upperSum;
+  if (combined >= 63) {
+    room.players[idx].ps.claimBonus = 35;
+    room.upperAwarded = true;
+  }
+}
+
+/** Enter sudden death for the single remaining category: fresh turn for both. */
+function startSudden(room, cat) {
+  room.sudden = { cat, locked: [null, null] };
+  room.turn = null;              // Classic alternation ends; both play at once
+  for (const pl of room.players) {
+    pl.ps.dice = null;
+    pl.ps.rollsLeft = 3;
+    pl.hold = emptyHold();
+  }
+}
+
+/** Both players locked → the higher box score claims it; a tie voids the box. */
+function resolveSudden(room) {
+  const [a, b] = room.sudden.locked;
+  const cat = room.sudden.cat;
+  if (a.pts !== b.pts) {
+    const w = a.pts > b.pts ? 0 : 1;
+    const ps = room.players[w].ps;
+    if (room.sudden.locked[w].extraYahtzee) ps.yahtzeeBonus += 100;
+    ps.card[cat] = room.sudden.locked[w].pts;
+    ps.round++;
+    checkUpperRace(room, w);
+  }
+  room.over = true;
+}
+
+// ---------------------------------------------------------------------------
 // Personalized view-model (§5) — built fresh per player on every push.
 // ---------------------------------------------------------------------------
 
@@ -150,33 +209,54 @@ function stateFor(room, i) {
   const opp = room.players[1 - i];
   const mode = room.mode;
   const over = room.over;
+  // Alternating, visible-dice play happens ONLY in Classic (mode 1) Duel games.
+  // Category Claim is a simultaneous race even on independent dice, so it hides
+  // the opponent's dice and runs turn-free like variants 2/3.
+  const alternating = mode === 1 && !room.claim;
 
-  // Own dice are always visible; opponent's dice ONLY in variant 1.
+  // Own dice are always visible; opponent's dice ONLY in an alternating Classic game.
   const you = me.ps.serialize(true);
-  const oppView = opp.ps.serialize(mode === 1);
+  const oppView = opp.ps.serialize(alternating);
 
-  // Turn is personalized ('you'/'opp') in variant 1; simultaneous play in 2/3 → null.
-  const turn = mode === 1 ? (room.turn === i ? 'you' : 'opp') : null;
+  // Turn is personalized ('you'/'opp') only in alternating Classic; simultaneous
+  // play (variants 2/3, and every Category Claim game) → null.
+  const turn = alternating && room.turn !== null ? (room.turn === i ? 'you' : 'opp') : null;
 
   // lastRoll drives the tumble animation. Your own roll is always relayed; the
-  // opponent's roll is relayed only in variant 1 (in 2/3 their dice/mask are hidden).
+  // opponent's roll is relayed only in an alternating Classic game (else hidden).
   let lastRoll = null;
   if (room.lastRoll) {
     if (room.lastRoll.player === i) {
       lastRoll = { who: 'you', mask: room.lastRoll.mask.slice() };
-    } else if (mode === 1) {
+    } else if (alternating) {
       lastRoll = { who: 'opp', mask: room.lastRoll.mask.slice() };
     }
   }
 
-  // Opponent's held-dice mask is relayed only in variant 1 (visible turns).
-  const oppHold = mode === 1 ? opp.hold.slice() : null;
+  // Opponent's held-dice mask is relayed only in an alternating Classic game.
+  const oppHold = alternating ? opp.hold.slice() : null;
+
+  // Category Claim: sudden-death readout. Your own locked pts are echoed back;
+  // the opponent's stay a boolean until the game is over (no early reveal).
+  let sudden = null;
+  if (room.sudden) {
+    const mine = room.sudden.locked[i];
+    const theirs = room.sudden.locked[1 - i];
+    sudden = {
+      cat: room.sudden.cat,
+      youPts: mine ? mine.pts : null,
+      oppLocked: theirs !== null,
+      oppPts: over && theirs ? theirs.pts : null,
+    };
+  }
 
   return {
     t: 'state',
     seq: room.seq,
     phase: over ? 'end' : 'play',
     mode,
+    claim: room.claim,
+    sudden,
     code: room.code,
     youName: me.name,
     oppName: opp.name,
@@ -208,11 +288,17 @@ function push(room) {
 
 function handleCreate(ws, msg) {
   if (conns.has(ws)) return; // already in a room
-  const mode = msg.mode === 2 || msg.mode === 3 ? msg.mode : 1;
+  const claim = !!msg.claim;
+  // Category Claim is a separate game that plays ONLY on independent dice (the
+  // Classic model). Force mode 1 for any claim room regardless of the requested
+  // mode, so a stale/hostile client can never open the illegal claim + shared/
+  // linked combination. Duel rooms honor the requested variant.
+  const mode = claim ? 1 : (msg.mode === 2 || msg.mode === 3 ? msg.mode : 1);
   const code = makeCode();
   const room = {
     code,
     mode,
+    claim,                     // Category Claim — a separate game, independent dice only (mode 1)
     players: [{ ws, name: sanitizeName(msg.name), ps: new PlayerState(), hold: emptyHold() }],
     shared: null,
     turn: 0,
@@ -221,10 +307,13 @@ function handleCreate(ws, msg) {
     lastRoll: null,
     rematch: [false, false],
     seq: 0,
+    sudden: null,              // { cat, locked: [ {pts, extraYahtzee} | null, … ] } during sudden death
+    upperAwarded: false,       // combined-upper 63 race decided
   };
   // Give this player their own reproducible "luck tape"; their dice flow through
   // ps.luck via nextDice. Never transmitted except in that player's own end payload.
   room.players[0].ps.luck = makeLuck();
+  room.players[0].ps.claimMode = room.claim;
   rooms.set(code, room);
   conns.set(ws, { room, idx: 0 });
   send(ws, { t: 'created', code });
@@ -246,11 +335,13 @@ function handleJoin(ws, msg) {
   room.players.push({ ws, name: sanitizeName(msg.name), ps: new PlayerState(), hold: emptyHold() });
   // Joiner gets their own luck tape too (see handleCreate).
   room.players[1].ps.luck = makeLuck();
+  room.players[1].ps.claimMode = room.claim;
   conns.set(ws, { room, idx: 1 });
 
   // Game starts: one authoritative shared-dice table, kept secret on the server.
   room.shared = makeShared();
-  room.turn = room.starter;
+  // Claim races are simultaneous (turn-free); only a Classic Duel alternates.
+  room.turn = room.claim ? null : room.starter;
   room.over = false;
   room.lastRoll = null;
   push(room);
@@ -263,8 +354,14 @@ function handleRoll(ws, msg) {
   if (!started(room) || room.over) return;
   const p = room.players[idx];
   if (p.ps.done) return;
-  if (room.mode === 1 && room.turn !== idx) return;
+  // Alternating-turn gate applies only to a Classic Duel game (mode 1, no claim).
+  if (room.mode === 1 && !room.claim && room.turn !== null && room.turn !== idx) return;
   if (p.ps.rollsLeft <= 0) return;
+  if (room.sudden && room.sudden.locked[idx]) return;  // locked in — no more rolls
+  // Category Claim is a simultaneous race in lockstep: you start a roll only when
+  // your opponent has reached it (canRollSync), so neither runs rolls ahead —
+  // but whoever *decides* faster still claims a contested box first.
+  if (room.claim && !canRollSync(p.ps, room.players[1 - idx].ps)) return;
 
   // The FIRST roll of a round ignores the hold mask (nextDice re-rolls all 5 anyway).
   const firstRoll = p.ps.rollsLeft === 3;
@@ -281,7 +378,9 @@ function handleHold(ws, msg) {
   const c = conns.get(ws);
   if (!c) return;
   const { room, idx } = c;
-  if (room.mode !== 1 || !started(room) || room.over) return; // relayed hold is variant 1 only
+  // Relayed holds exist only for the alternating, visible-dice Classic Duel game.
+  // Category Claim hides dice (simultaneous race), so it never relays holds.
+  if (room.mode !== 1 || room.claim || !started(room) || room.over) return;
   const p = room.players[idx];
   if (p.ps.done) return;
   if (room.turn !== idx) return;
@@ -298,20 +397,51 @@ function handleScore(ws, msg) {
   if (!started(room) || room.over) return;
   const p = room.players[idx];
   if (p.ps.done) return;
-  if (room.mode === 1 && room.turn !== idx) return;
+  if (room.mode === 1 && !room.claim && room.turn !== null && room.turn !== idx) return;
   if (p.ps.dice === null) return;
 
   const cat = msg.cat;
   if (typeof cat !== 'string' || !CATS.includes(cat)) return;
 
-  // scoreCategory enforces legality (incl. joker restrictions) and returns null if illegal.
-  const pts = p.ps.scoreCategory(cat);
+  // Sudden death: "scoring" the contested box locks your dice in — the box is
+  // resolved (higher pts wins it) once both players have locked.
+  if (room.sudden) {
+    if (cat !== room.sudden.cat) return;
+    if (room.sudden.locked[idx]) return;
+    const pot = potentials(p.ps.card, p.ps.dice, blockedFor(room, idx));
+    if (!pot[cat]) return;
+    room.sudden.locked[idx] = {
+      pts: pot[cat].pts,
+      // Extra-Yahtzee +100 rides on the WINNING score only (applied at resolve).
+      extraYahtzee: isYahtzee(p.ps.dice) && p.ps.card.yahtzee === 50,
+    };
+    p.ps.rollsLeft = 0;                 // frees the opponent's barrier; no more rolls
+    p.hold = emptyHold();
+    room.lastRoll = null;
+    if (room.sudden.locked[0] && room.sudden.locked[1]) resolveSudden(room);
+    push(room);
+    return;
+  }
+
+  // scoreCategory enforces legality (incl. joker restrictions) and returns null if
+  // illegal. Under Category Claim the opponent's claimed boxes are blocked too —
+  // a race to the same box is decided by whichever score reaches the server first.
+  const blocked = room.claim ? blockedFor(room, idx) : undefined;
+  const pts = p.ps.scoreCategory(cat, blocked);
   if (pts === null) return;
 
   p.hold = emptyHold();
   room.lastRoll = null;
 
-  if (bothDone(room)) {
+  if (room.claim) {
+    // Category Claim is simultaneous — scoring never passes a turn; each player
+    // just advances their own round (kept in step by the roll barrier).
+    checkUpperRace(room, idx);
+    const open = openCats(room.players[0].ps.card, room.players[1].ps.card);
+    if (open.length === 1) {
+      startSudden(room, open[0]);       // the last box is contested head-to-head
+    }
+  } else if (bothDone(room)) {
     room.over = true;
   } else if (room.mode === 1) {
     // Variant 1: scoring passes the turn to the other player.
@@ -332,15 +462,18 @@ function handleRematch(ws) {
     for (const pl of room.players) {
       pl.ps = new PlayerState();
       pl.ps.luck = makeLuck(); // fresh tape per game (fresh room.shared below)
+      pl.ps.claimMode = room.claim;
       pl.hold = emptyHold();
     }
     room.shared = makeShared();
     room.over = false;
     room.lastRoll = null;
     room.rematch = [false, false];
-    // starter alternates in variant 1; seq keeps climbing (never reset).
-    room.starter = room.mode === 1 ? 1 - room.starter : room.starter;
-    room.turn = room.starter;
+    room.sudden = null;
+    room.upperAwarded = false;
+    // starter alternates in a Classic Duel; seq keeps climbing (never reset).
+    room.starter = room.mode === 1 && !room.claim ? 1 - room.starter : room.starter;
+    room.turn = room.claim ? null : room.starter;
   }
   push(room);
 }

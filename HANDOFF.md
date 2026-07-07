@@ -46,7 +46,8 @@ Run the tests (plain `node`, no framework):
 node test-game.js            # 21 groups — core rules & scoring
 node test-game-edge.js       # 16 adversarial groups — joker/edge cases
 node test-luck.js            # 4 checks — luck-tape contract + same-luck optimal replay
-node test-analysis.js        # 10 checks — post-game analysis over the real strategy.bin
+node test-claim.js           # 11 checks — Category Claim rules, barrier, engine + server e2e
+node test-analysis.js        # 12 checks — post-game analysis + Coach subsetReport over strategy.bin
 node solver/test-tables.js   # multiset machinery
 node solver/test-states.js   # state enumeration + dense indexing
 node solver/test-rules.js    # 250k random (mask,dice) pairs vs potentials()
@@ -73,14 +74,14 @@ node solver/uncertainty.js           # regenerate public/uncertainty.json (luck-
 | `public/index.html` | All screens in one document (home / lobby / game + end overlay + analysis panel). A `DOM CONTRACT` comment enumerates element ids. Scorecard rows are `.sc-row[data-cat=…]` for the 13 categories and `.sc-row[data-row=…]` for derived display rows (upper-sum, upper-bonus, yahtzee-bonus, total). Standard/Perfect machine sub-toggle. Footer links the explorer. |
 | `public/style.css` | Editorial "paper & ink" aesthetic; Fraunces + IBM Plex Mono; CSS-pip dice; held dice fully inverted; vermillion accent for potentials. |
 | `public/shared/game.js` | The shared rules module imported by **both** server and browser. Exports `ROUNDS`, `UPPER`, `LOWER`, `CATS`, `isYahtzee`, `scoreCat` (joker-unaware), `potentials` (joker-aware legality + points), `makeShared`/`nextDice` (zero-sync shared dice for variants 2/3), `makeLuck` (a per-player position-indexed "luck tape"; when `ps.luck` is set `nextDice` draws each player's non-shared randomness from it, making that player's whole game reproducible for ANY holds — `serialize()` never leaks it), and `class PlayerState`. `PlayerState.scoreCategory` auto-applies the +100 extra-Yahtzee bonus before writing the box. |
-| `public/js/app.js` | Screen router + single pure renderer over the view-model + input wiring + post-game decision recording (`moveLog`) + analysis-panel wiring. |
-| `public/js/engine.js` | `LocalEngine` (vs AI): `roll` / `score` / `holdUpdate` / `rematch` / `destroy` + `onState`; builds the **same** view-model shape as the server; accepts `opts.ai` (decision object); AI pacing per variant. |
+| `public/js/app.js` | Screen router + single pure renderer over the view-model + input wiring + post-game decision recording (`moveLog`) + analysis-panel wiring. Also the **Coach** (training) layer: the Machine-only Coach toggle layers over any Duel variant (mode kept; not for Category Claim) via `gamePayload().coach`; `showHint()` calls `policy.evalTurn` and glows the optimal keep-dice/category; `toggleFlag()` records decision keys; `openReview()` renders `subsetReport` of the flagged decisions in the analysis overlay. Purely client-side — the engine is untouched. |
+| `public/js/engine.js` | `LocalEngine` (vs AI): `roll` / `score` / `holdUpdate` / `rematch` / `destroy` + `onState`; builds the **same** view-model shape as the server; accepts `opts.ai` (decision object); AI pacing per variant. `opts.claim` → **Category Claim** (a separate game; the home "Game" fork ships it with `mode 1` only): a **simultaneous race** on independent dice — turn-free, hidden dice, `canRollSync` roll barrier, shared 13-box pool, sudden death for the last box, combined-upper 63 race. The lockstep `pumpClaimAI` paces the machine at a human-like variable rate (`claimDelay(kind)`, `Math.random()²`-skewed) so racing to a box is fair. |
 | `public/js/net.js` | `RemoteEngine` (WebSocket client); identical interface to `LocalEngine`; drives create/join lobby. |
 | `public/js/ai.js` | Standard heuristic AI (brute-force over 32 hold masks + Monte-Carlo one-step rollout). Exports `aiChooseCategory`, `aiChooseHold`. |
 | `public/js/ai-optimal.js` | Perfect AI. Exports `holdMaskFromKeep(dice, keepFaces)` and `async loadOptimalAI(baseUrl='')`, which fetches `strategy.bin` + `strategy-meta.json`, builds a `Policy`, and returns `{ chooseHold, chooseCategory }` matching `ai.js`'s signatures. |
-| `public/js/analysis.js` | Post-game analysis. Exports `OPTIMAL_EPS = 0.01`, `PERFECT_EV = 254.5877`, `recordDecision(log, view, action)`, `analyze(log, policy)` (pure, no DOM), `renderAnalysis(report, el, opts)` (the only DOM-touching export). |
-| `public/js/uncertainty-ui.js` | Variant-picker luck-vs-skill readout. `init()` fetches `public/uncertainty.json` once (tiny — no strategy table), reveals the readout, wires the skill-spread selector (`#seg-spread`), and paints each variant card's split bar + caption. Fails soft: on any fetch/shape error the readouts hide and the game still starts. |
-| `public/uncertainty.json` | Precomputed luck/skill decomposition per spread × variant, written by `solver/uncertainty.js`. Consumed only by `uncertainty-ui.js`. |
+| `public/js/analysis.js` | Post-game analysis. Exports `OPTIMAL_EPS = 0.01`, `PERFECT_EV = 254.5877`, `recordDecision(log, view, action)`, `analyze(log, policy)` (pure), `subsetReport(decisions)` (pure — rebuilds an analyze-shaped report over a flagged subset for the Coach review), `replayOptimal(...)`, and `renderAnalysis(report, el, opts)` (the only DOM-touching export). |
+| `public/js/uncertainty-ui.js` | Variant-picker luck-vs-skill readout. `init()` fetches `public/uncertainty.json` once (tiny — no strategy table), reveals the readout, and paints each variant card's split bar + caption. Fails soft: on any fetch/shape error the readouts hide and the game still starts. |
+| `public/uncertainty.json` | Precomputed luck/skill split per variant, written by `solver/uncertainty.js`. Consumed only by `uncertainty-ui.js`. |
 | `public/js/explore.js` + `public/explore.html` | The interactive Strategy Explorer. |
 | `public/strategy.bin` + `public/strategy-meta.json` | Served copies of the solved table (generated by `solver/solve.js`). |
 
@@ -95,7 +96,7 @@ node solver/uncertainty.js           # regenerate public/uncertainty.json (luck-
 | `solver/analyze.js` | CLI position query (see runbook). |
 | `solver/simulate.js` | Plays N games (default 10000, `--n`) under the optimal policy; reports stats. |
 | `solver/verify-endgame.js` | Independent expectimax (a different algorithm) cross-checking `strategy.bin`. |
-| `solver/uncertainty.js` | Nested Monte-Carlo luck-vs-skill decomposition of the match margin `M = S_A − S_B` (law of total variance) for 3 skill spreads × 3 variants. Reuses the shipped mechanics + `Policy`; parallel via `worker_threads`. Writes `public/uncertainty.json` and prints a table + sanity summary. `--K --J --seed --workers --single --out`. |
+| `solver/uncertainty.js` | Luck-vs-skill per variant by one Monte-Carlo calculation: a perfect player vs a near-perfect player (best EV unless ≥2 options are within **4** EV pts — then uniform random among them); `skill% = 2×(win rate − 50%)`, ties = half a win. Reuses the shipped mechanics + `Policy`; parallel via `worker_threads`. Writes `public/uncertainty.json` and prints a table + sanity check. `--N --seed --workers --single --out`. |
 
 ### Docs
 
@@ -115,7 +116,8 @@ node solver/uncertainty.js           # regenerate public/uncertainty.json (luck-
 | `test-game.js` | Core rules & scoring (21 groups). |
 | `test-game-edge.js` | Adversarial joker / edge cases (16 groups). |
 | `test-luck.js` | The `makeLuck` / `ps.luck` tape: same holds over the same tape reproduce identical dice across all 3 modes (fidelity), raw tape values are uniform, an optimal same-luck replay averages ≈ 254.6, and luckless players still match the old shared-dice path (4 checks). |
-| `test-analysis.js` | `analyze()` flags injected blunders and matches independently recomputed EV loss over the real `strategy.bin` (10 checks). |
+| `test-claim.js` | Category Claim: blocked potentials incl. joker branching, the canRollSync lockstep barrier, full LocalEngine claim games (disjoint claims, sudden death, combined-upper race), rematch reset, the independent-pump-guard regression, and a real two-client ws game on a child-process server where a mode-2 claim request is coerced to independent dice and stays simultaneous (11 checks). |
+| `test-analysis.js` | `analyze()` flags injected blunders and matches independently recomputed EV loss over the real `strategy.bin`; `subsetReport()` recomputes summary/Σ over a flagged subset (12 checks). |
 | `solver/test-tables.js` | Multiset tables & lattice. |
 | `solver/test-states.js` | State enumeration + dense indexing (the `strategy.bin` order). |
 | `solver/test-rules.js` | 250k random `(mask, dice)` pairs: solver legality/points vs `potentials()`. |

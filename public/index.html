@@ -35,9 +35,9 @@
     * Selected/active state (toggle class ".is-selected" / ".is-active"):
         #opp-machine / #opp-friend            segmented Opponent toggle
         #ai-standard / #ai-perfect            segmented Machine-strength sub-toggle
+        #game-duel / #game-claim              segmented Game fork (Duel / Category Claim)
         #variant-1 / #variant-2 / #variant-3  variant option cards
-        #variant-group                        add ".is-locked" for joiners
-        #spread-experts / #spread-mixed / #spread-novices  skill-spread selector
+        #game-select                          add ".is-locked" for joiners (dims the whole fork)
         #you-dot / #opp-dot                   active-player accent dot
     * Loading state: #btn-start gets class ".is-loading" (and [disabled]) while
       the Perfect strategy table is being fetched; both removed afterwards.
@@ -48,23 +48,36 @@
     #ai-strength        wrapper — Machine strength sub-toggle (hidden when Friend chosen)
     #ai-standard          button — heuristic AI (ai.js)
     #ai-perfect           button — optimal-policy AI (fetches /strategy.bin on Start)
-    #variant-group      wrapper around the three variant cards (".is-locked" dims all)
+    #coach-toggle       wrapper — Coach on/off sub-toggle (Machine only; hidden when Friend)
+    #coach-off / #coach-on   segmented Coach buttons (".is-selected"). Coach On → the
+                          machine's coach reviews YOUR play; layers over ANY Duel variant
+                          (does not apply to Category Claim).
+    STEP 02 is a GAME fork: pick Duel (the three dice-sharing variants) or
+    Category Claim (a separate game — one shared card, independent dice only).
+    #game-select        wrapper for the whole fork + both bodies (".is-locked" dims all on join)
+    #seg-game           segmented Duel / Category Claim fork (group)
+    #game-duel / #game-claim   the two fork buttons (".is-selected")
+    #game-caption       serif line under the fork (aria-live; swaps per game / host-lock)
+    #duel-body          shown for Duel: tier-label + luck/skill intro + the three variant cards
+    #claim-body         shown for Category Claim: rules panel (Dice / Turns / Bonus), no split bar
+    #variant-group      wrapper around the three variant cards (inside #duel-body)
     #variant-1          card — Classic      (data-mode="1")
     #variant-2          card — Shared Start  (data-mode="2")
     #variant-3          card — Linked Dice   (data-mode="3")
-    #variant-host-note  "Set by host" note (shown to joiners)
+    #variant-host-note  "Set by host" note in the step head (shown to joiners)
     LUCK-vs-SKILL readout (fed from public/uncertainty.json by app.js) ---------
-    #seg-spread         segmented skill-spread selector (group; default = Mixed)
-    #spread-experts       button — spread "experts" (data-spread="experts")
-    #spread-mixed         button — spread "mixed"   (data-spread="mixed", default .is-selected)
-    #spread-novices       button — spread "novices" (data-spread="novices")
     #unc-explain        static one-line explainer under the step head
-    per variant card i ∈ {1,2,3} — filled from the JSON for the active spread:
+    per variant card i ∈ {1,2,3} — filled from the JSON:
       #unc-bar-i          split-bar container (decorative, aria-hidden)
       #unc-luck-i           luck segment  — set style.width = "NN%"  (muted)
       #unc-skill-i          skill segment — set style.width = "NN%"  (vermillion)
       #unc-cap-i          mono caption — set textContent, e.g. "62% luck · 38% skill"
                           (optional inner spans .luck / .skill get muted / accent ink)
+      #unc-games-i        match-length stat (right strip): games until perfect play is
+                          >95% likely to have the higher SUMMED score (JSON
+                          variant.pointsGamesTo95). Number leads; static caption below reads
+                          "games for skill to beat luck". The .v-matchlen title (hover) is
+                          rewritten per card in uncertainty-ui.js to name that card's number.
     #input-name         text input — player name
     #actions-machine    wrapper: shown when Machine chosen
     #btn-start            button — begin an AI game
@@ -101,6 +114,12 @@
       #rolls-left       container of the three rolls-left dots
       #roll-dot-0 … #roll-dot-2   dots; mark spent ones with class ".is-spent"
       #sub-status       secondary status / variant roll chip (mono, muted)
+      #coach-panel      Coach controls (training games only): shown on your decision
+        #btn-hint         reveal the optimal move for the current dice
+        #btn-flag         flag this decision to review at game end (toggles ".is-flagged")
+        #coach-hint       aria-live line where the optimal move is printed
+      Coach highlights: die-i gets ".die--hint" (suggested keep), a category row gets
+      ".sc-row--hint" (suggested score) while a hint is shown for the live decision.
     SCORECARD ROW CONTRACT (identical inside both #scorecard-you / #scorecard-opp):
       Each category row is  .sc-row[data-cat="<cat>"]  with a .sc-label and a
       .sc-value span.  <cat> ∈ ones,twos,threes,fours,fives,sixes, threeKind,
@@ -110,18 +129,23 @@
         .sc-row--open        open & scorable  → value renders vermillion (potential)
         .sc-row--disallowed  joker-forbidden  → dimmed, unclickable
         .sc-row--filled      already scored    → value in ink
+        .sc-row--claimed     Category Claim: taken by the OTHER player → dead ("✕")
+        .sc-row--sudden      Category Claim: the contested sudden-death box
       Bind clicks to open rows via their data-cat.
   END OVERLAY  (#overlay-end)
     #end-verdict        Fraunces verdict ("You win." / "You lose." / "Dead heat.")
     #end-you-name / #end-you-total    your name + final total
     #end-opp-name / #end-opp-total    opponent name + final total
     #btn-rematch        button — vote rematch
+    #btn-review         button — open the flagged-decisions review modal (training
+                        games only; shown when ≥1 decision was flagged)
     #btn-analysis       button — open the post-game decision-analysis panel
                         (lazy-loads /strategy.bin on first click)
     #btn-newgame        button — return home / new game
     #end-rematch-note   "waiting for opponent" note (multiplayer)
   ANALYSIS OVERLAY  (#overlay-analysis)  — class ".is-active" shows it; app.js
-    swaps it with #overlay-end (Analysis button opens it, Back returns).
+    swaps it with #overlay-end (Analysis/Review buttons open it, Back returns).
+    #an-kicker / #an-title   heading (app.js retitles it for the flagged-review reuse)
     #analysis-content   container renderAnalysis() fills (also holds the
                         loading / failure status line, class ".an-status")
     #btn-analysis-back  button — close the panel, return to the end overlay
@@ -135,9 +159,7 @@
   <main class="screen home is-active" id="screen-home">
     <div class="home-inner">
       <header class="masthead reveal">
-        <p class="kicker">Two-player dice &middot; paper &amp; ink</p>
         <h1 class="title">Yahtzee <em>Duel</em></h1>
-        <p class="dek">A quiet contest of luck and nerve — against the machine, or a friend across a four-letter code.</p>
       </header>
 
       <section class="step reveal">
@@ -156,68 +178,101 @@
             <button class="seg" id="ai-perfect" type="button">Perfect</button>
           </div>
         </div>
+        <div class="sub-toggle coach-sub" id="coach-toggle">
+          <span class="sub-toggle-label">Coach</span>
+          <div class="segmented segmented--sub" id="seg-coach" role="group" aria-label="Coach">
+            <button class="seg is-selected" id="coach-off" type="button">Off</button>
+            <button class="seg" id="coach-on" type="button">On</button>
+          </div>
+          <span class="coach-note">Adds a coach to any Duel game — ask for the best move mid-turn, or flag a decision to review at the end. (Not available for Category Claim.)</span>
+        </div>
       </section>
 
       <section class="step reveal">
         <div class="step-head">
           <span class="step-num">02</span>
-          <span class="step-label">Variant</span>
+          <span class="step-label">Game</span>
           <span class="host-note" id="variant-host-note" hidden>Set by host</span>
         </div>
-        <div class="unc-intro">
-          <p class="unc-explain" id="unc-explain">How much of the win each variant hands to luck rather than skill &mdash; the dice against the gap in play &mdash; from a Monte-Carlo simulation of thousands of games.</p>
-          <div class="unc-controls">
-            <div class="unc-legend" aria-hidden="true">
-              <span class="unc-legend-item"><i class="unc-sw unc-sw--luck"></i>Luck</span>
-              <span class="unc-legend-item"><i class="unc-sw unc-sw--skill"></i>Skill</span>
-            </div>
-            <div class="unc-spread">
-              <span class="unc-spread-label">Players</span>
-              <div class="segmented segmented--sub" id="seg-spread" role="group" aria-label="Skill spread">
-                <button class="seg" id="spread-experts" type="button" data-spread="experts">Experts</button>
-                <button class="seg is-selected" id="spread-mixed" type="button" data-spread="mixed">Mixed</button>
-                <button class="seg" id="spread-novices" type="button" data-spread="novices">Novices</button>
+        <div class="game-select" id="game-select">
+          <div class="segmented" id="seg-game" role="group" aria-label="Game">
+            <button class="seg is-selected" id="game-duel" type="button">Duel</button>
+            <button class="seg" id="game-claim" type="button">Category Claim</button>
+          </div>
+          <p class="game-caption" id="game-caption" aria-live="polite">Two scorecards. Race to the higher total.</p>
+
+          <div id="duel-body">
+            <p class="tier-label">Variant &middot; how you share the dice</p>
+            <div class="unc-intro">
+              <p class="unc-explain" id="unc-explain">How much of the win each variant hands to luck rather than skill &mdash; how often perfect play beats near-perfect play across thousands of simulated games. 100% skill means the better play always wins; 0% means a coin flip. The figure on the right of each card is how many games it takes before perfect play is 95% likely to have the higher combined score &mdash; the fewer, the more skill decides it.</p>
+              <div class="unc-controls">
+                <div class="unc-legend" aria-hidden="true">
+                  <span class="unc-legend-item"><i class="unc-sw unc-sw--luck"></i>Luck</span>
+                  <span class="unc-legend-item"><i class="unc-sw unc-sw--skill"></i>Skill</span>
+                </div>
               </div>
             </div>
+            <div class="variants" id="variant-group">
+              <button class="variant-card is-selected" id="variant-1" data-mode="1" type="button">
+                <span class="v-mark" aria-hidden="true"></span>
+                <span class="v-name">Classic</span>
+                <span class="v-desc">Every roll your own. No holds barred variance.</span>
+                <span class="v-unc">
+                  <span class="v-bar" id="unc-bar-1" aria-hidden="true">
+                    <span class="v-bar-seg v-bar-luck" id="unc-luck-1"></span>
+                    <span class="v-bar-seg v-bar-skill" id="unc-skill-1"></span>
+                  </span>
+                  <span class="v-caption" id="unc-cap-1"></span>
+                </span>
+                <span class="v-matchlen" title="It takes about 6 games before there's a 95% chance the better player has actually scored more points.">
+                  <span class="v-ml-num" id="unc-games-1">—</span>
+                  <span class="v-ml-cap">games for skill<br>to beat luck</span>
+                </span>
+              </button>
+              <button class="variant-card" id="variant-2" data-mode="2" type="button">
+                <span class="v-mark" aria-hidden="true"></span>
+                <span class="v-name">Shared Start</span>
+                <span class="v-desc">Each round opens on the very same five dice for you and your opponent.</span>
+                <span class="v-unc">
+                  <span class="v-bar" id="unc-bar-2" aria-hidden="true">
+                    <span class="v-bar-seg v-bar-luck" id="unc-luck-2"></span>
+                    <span class="v-bar-seg v-bar-skill" id="unc-skill-2"></span>
+                  </span>
+                  <span class="v-caption" id="unc-cap-2"></span>
+                </span>
+                <span class="v-matchlen" title="It takes about 6 games before there's a 95% chance the better player has actually scored more points.">
+                  <span class="v-ml-num" id="unc-games-2">—</span>
+                  <span class="v-ml-cap">games for skill<br>to beat luck</span>
+                </span>
+              </button>
+              <button class="variant-card" id="variant-3" data-mode="3" type="button">
+                <span class="v-mark" aria-hidden="true"></span>
+                <span class="v-name">Linked Dice</span>
+                <span class="v-desc">Shared start — and every reroll drawn from one common well of dice.</span>
+                <span class="v-unc">
+                  <span class="v-bar" id="unc-bar-3" aria-hidden="true">
+                    <span class="v-bar-seg v-bar-luck" id="unc-luck-3"></span>
+                    <span class="v-bar-seg v-bar-skill" id="unc-skill-3"></span>
+                  </span>
+                  <span class="v-caption" id="unc-cap-3"></span>
+                </span>
+                <span class="v-matchlen" title="It takes about 6 games before there's a 95% chance the better player has actually scored more points.">
+                  <span class="v-ml-num" id="unc-games-3">—</span>
+                  <span class="v-ml-cap">games for skill<br>to beat luck</span>
+                </span>
+              </button>
+            </div>
           </div>
-        </div>
-        <div class="variants" id="variant-group">
-          <button class="variant-card is-selected" id="variant-1" data-mode="1" type="button">
-            <span class="v-mark" aria-hidden="true"></span>
-            <span class="v-name">Classic</span>
-            <span class="v-desc">Alternating turns, every roll your own — your opponent's dice in full view.</span>
-            <span class="v-unc">
-              <span class="v-bar" id="unc-bar-1" aria-hidden="true">
-                <span class="v-bar-seg v-bar-luck" id="unc-luck-1"></span>
-                <span class="v-bar-seg v-bar-skill" id="unc-skill-1"></span>
-              </span>
-              <span class="v-caption" id="unc-cap-1"></span>
-            </span>
-          </button>
-          <button class="variant-card" id="variant-2" data-mode="2" type="button">
-            <span class="v-mark" aria-hidden="true"></span>
-            <span class="v-name">Shared Start</span>
-            <span class="v-desc">Play at once, hidden from each other. Each round opens on the very same five dice.</span>
-            <span class="v-unc">
-              <span class="v-bar" id="unc-bar-2" aria-hidden="true">
-                <span class="v-bar-seg v-bar-luck" id="unc-luck-2"></span>
-                <span class="v-bar-seg v-bar-skill" id="unc-skill-2"></span>
-              </span>
-              <span class="v-caption" id="unc-cap-2"></span>
-            </span>
-          </button>
-          <button class="variant-card" id="variant-3" data-mode="3" type="button">
-            <span class="v-mark" aria-hidden="true"></span>
-            <span class="v-name">Linked Dice</span>
-            <span class="v-desc">Shared start — and every reroll drawn from one common well of dice.</span>
-            <span class="v-unc">
-              <span class="v-bar" id="unc-bar-3" aria-hidden="true">
-                <span class="v-bar-seg v-bar-luck" id="unc-luck-3"></span>
-                <span class="v-bar-seg v-bar-skill" id="unc-skill-3"></span>
-              </span>
-              <span class="v-caption" id="unc-cap-3"></span>
-            </span>
-          </button>
+
+          <div class="claim-panel" id="claim-body" hidden>
+            <p class="claim-lead">One 13-box card between you. Score a category and it's dead for both — so race to claim the ones you want before your opponent gets there.</p>
+            <dl class="claim-rules">
+              <dt>Dice</dt><dd>Your own independent rolls, hidden from each other. Never shared or linked.</dd>
+              <dt>Race</dt><dd>Played at once and kept in step — neither runs more than a roll ahead — but decide faster and the box is yours first.</dd>
+              <dt>Finish</dt><dd>Six claims each, then a sudden-death roll-off for the last box: higher score takes it, a tie voids it.</dd>
+              <dt>Bonus</dt><dd>+35 to whoever pushes the combined upper section past 63.</dd>
+            </dl>
+          </div>
         </div>
       </section>
 
@@ -316,6 +371,13 @@
           </div>
         </div>
         <p class="sub-status" id="sub-status"></p>
+        <div class="coach" id="coach-panel" hidden>
+          <div class="coach-actions">
+            <button class="btn btn--ghost btn--sm" id="btn-hint" type="button">Best move</button>
+            <button class="btn btn--ghost btn--sm" id="btn-flag" type="button">Flag for review</button>
+          </div>
+          <p class="coach-hint" id="coach-hint" aria-live="polite"></p>
+        </div>
       </section>
 
       <!-- OPPONENT scorecard -->
@@ -366,6 +428,7 @@
       </div>
       <div class="end-actions">
         <button class="btn btn--primary btn--wide" id="btn-rematch" type="button">Rematch</button>
+        <button class="btn btn--ghost btn--wide" id="btn-review" type="button" hidden>Review flagged</button>
         <button class="btn btn--ghost btn--wide" id="btn-analysis" type="button">Analysis</button>
         <button class="btn btn--ghost btn--wide" id="btn-newgame" type="button">New game</button>
       </div>
@@ -377,8 +440,8 @@
   <div class="overlay" id="overlay-analysis">
     <div class="an-card">
       <header class="an-head">
-        <p class="kicker">Post-game</p>
-        <h2 class="an-title">Decision analysis</h2>
+        <p class="kicker" id="an-kicker">Post-game</p>
+        <h2 class="an-title" id="an-title">Decision analysis</h2>
       </header>
       <div class="an-content" id="analysis-content">
         <p class="an-status">&hellip;</p>

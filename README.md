@@ -22,15 +22,48 @@ The game creator picks one of three variants:
    opponent rerolls 2 on the same roll, the first 2 of those rerolled dice match for both
    of you. The most tightly coupled, most skill-driven variant.
 
-### Luck vs skill
+## Category Claim — a separate game
 
-Under each variant on the game-type picker is a **luck-vs-skill split bar**: a Monte-Carlo
-estimate of how much of the head-to-head outcome that variant hands to the dice (luck) versus the
-gap in play (skill). Sharing dice cancels the swings that both players ride together, so luck's
-share drops and skill's share rises from Classic to Shared Start to **Linked Dice**, which is the
-most skill-driven of the three. A **Players** selector (Experts / Mixed / Novices) reweights the
-estimate for the skill level of the table. The numbers are precomputed offline
-(`solver/uncertainty.js` → `public/uncertainty.json`); see **UNCERTAINTY.md** for the method.
+Alongside the Duel variants, the home screen offers **Category Claim**, a different two-player
+game entirely. Both players share **one 13-box scorecard** — a category scored by either player
+is **dead for both**. Denial is real (score a cheap Yahtzee just to keep it from your opponent),
+and so is timing.
+
+Category Claim always plays on **completely independent (random) dice** — your own rolls, hidden
+from each other. It never combines with the Shared Start or Linked Dice mechanics; it's picked as
+its own game (the "Game" step forks between **Duel** and **Category Claim**), not as a modifier on
+a variant.
+
+Crucially it's a **simultaneous race**, not turn-based — because racing is the point. Play runs in
+**lockstep** (a roll barrier keeps neither player more than one roll ahead of the other, so nobody
+can blitz the card), but within that, **deciding faster claims a contested box first**: stop and
+score Sixes before your opponent does and they're forced to spend their good sixes-roll elsewhere.
+
+- **Six claims each**, then the final 13th box goes to **sudden death** — both players play one
+  full turn for it at once, lock in their dice, and the higher score in that box claims it (a tie
+  voids the box).
+- The **upper bonus is a race**: the player whose score pushes the *combined* upper-section total
+  past 63 pockets the 35 points.
+
+Playable against the Machine or a friend. Against the Machine, the AI plays at a **human-like
+variable pace** (it takes real time to roll, weigh its dice, and decide), so the race is fair — it
+sometimes beats you to a box and sometimes doesn't. The post-game luck/skill analysis is Duel-only
+(its solitaire-replay premise doesn't hold once a shared card constrains your choices).
+
+## The Duel luck/skill readout
+
+Under each Duel variant on the game picker is a **luck-vs-skill split bar**: how often a
+perfect player beats a near-perfect one (best-EV play, except it picks randomly among options
+within **4 EV points** of each other) over 100,000 simulated games, mapped
+`skill% = 2 × (win rate − 50%)` — 100% skill means the better play always wins, 0% means a coin
+flip. Sharing dice cancels the swings that both players ride together, so skill's share rises
+from Classic (~59%) to Shared Start (~62%) to **Linked Dice** (~74%), the most skill-driven of the
+three. On the right of each card is a match-length figure: how many games it takes before the
+perfect player is >95% likely to have the higher combined (summed) score — **6** for Classic,
+**5** for Shared Start, just **3** for Linked Dice. The numbers are precomputed offline
+(`solver/uncertainty.js` → `public/uncertainty.json`); see **UNCERTAINTY.md** for the method
+(and for a win-based best-of-N variant of the same idea, kept in the JSON but not shown on the
+cards).
 
 ## Running it
 
@@ -57,6 +90,23 @@ watch; in the other variants it plays its own hidden game alongside yours.
 A **strength toggle** picks how the Machine plays: **Standard** uses a fast heuristic, while
 **Perfect** plays provably optimal moves looked up from the solved strategy table (see
 *The solver* below).
+
+### Training with the Coach (Machine only)
+
+Turn **Coach** on (the toggle appears under the Machine strength) to add a coach to **any of the
+three Duel variants** — it reviews *your* play, not the machine's. (It doesn't apply to Category
+Claim, whose shared card the solitaire-optimal solver can't grade.) On any of your turns, after
+you've rolled:
+
+- **Best move** reveals the optimal decision for your current dice — it names the move (keep-and-
+  reroll or which category to score), prints its EV, and **glows the dice to keep** (or the
+  recommended category row). Shortcut: **H**.
+- **Flag for review** silently marks the decision to revisit later. Shortcut: **F**.
+
+At game end, **Review flagged** opens a modal listing exactly the decisions you flagged — what you
+played, the optimal line, and the EV you gave up on each — so you can study just the moments you
+were unsure about. (The full **Analysis** of every decision is still available too.) The coach uses
+the same exact solver as Perfect play, so its advice is provably optimal.
 
 ### Versus a Friend
 

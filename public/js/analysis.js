@@ -180,6 +180,37 @@ export function analyze(log, policy) {
   };
 }
 
+/**
+ * Build an analyze()-shaped report from a SUBSET of graded decisions (e.g. the
+ * ones a training player flagged for review), recomputing the running Σ-loss and
+ * the summary over just that subset so renderAnalysis can present it unchanged.
+ * PURE — no DOM. `decisions` are entries as produced by analyze().decisions.
+ *
+ * @param {ReturnType<typeof analyze>['decisions']} decisions
+ * @returns {ReturnType<typeof analyze>}
+ */
+export function subsetReport(decisions) {
+  let cumLoss = 0;
+  let nOptimal = 0;
+  let worst = null;
+  const out = decisions.map((d) => {
+    cumLoss += d.loss;
+    if (d.optimal) nOptimal++;
+    const nd = { ...d, cumLoss };
+    if (!d.optimal && (worst === null || d.loss > worst.loss)) worst = nd;
+    return nd;
+  });
+  return {
+    decisions: out,
+    totalLoss: cumLoss,
+    nOptimal,
+    nDecisions: out.length,
+    accuracyPct: out.length ? (100 * nOptimal) / out.length : 100,
+    worst,
+    perRoundCum: [],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // §2.5 — Same-luck perfect replay (game end)
 // ---------------------------------------------------------------------------

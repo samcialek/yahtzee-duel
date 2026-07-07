@@ -12,6 +12,10 @@
 // counts match the chosen keep multiset.
 
 import { Policy, fromPlayerState } from '../../solver/policy.js';
+import { CAT_ORDER } from '../../solver/tables.js';
+
+// cat name → solver bit index (for merging Category Claim blocked sets into the mask)
+const CAT_INDEX = Object.fromEntries(CAT_ORDER.map((c, i) => [c, i]));
 
 /**
  * Positional hold mask for a keep multiset (greedy count matching).
@@ -55,15 +59,32 @@ export async function loadOptimalAI(baseUrl = '') {
   const policy = new Policy(buffer, meta);
 
   /**
+   * Widget coordinates with opponent-claimed categories (Category Claim) merged
+   * into the mask as "filled" boxes. The player's own `up` sum is unchanged —
+   * claimed boxes contribute nothing to it, exactly like a self-zeroed box, so
+   * the state stays reachable. NOTE the policy still values the solitaire
+   * continuation (it assumes it will fill every remaining box itself), so under
+   * claim it is a strong heuristic rather than exactly optimal.
+   */
+  function coords(ps, blocked) {
+    const { mask, up, yz } = fromPlayerState(ps);
+    if (!blocked || blocked.size === 0) return { mask, up, yz };
+    let m = mask;
+    for (const cat of blocked) m |= 1 << CAT_INDEX[cat];
+    return { mask: m, up, yz };
+  }
+
+  /**
    * Same contract as ai.js aiChooseHold. stop === true means "keep everything,
    * score now"; per SOLVER.md §5 that is exactly when scoring now ties or beats
    * the best keep (evalTurn's best.type === 'score', tie tolerance 1e-9 — the
    * keep-all option is valued at the score-now EV, so keep-all never wins ties).
    * @param {Object} ps PlayerState with rolled dice (rollsLeft ∈ {1,2})
+   * @param {Set<string>} [blocked] opponent-claimed categories (Category Claim)
    * @returns {{hold: boolean[], stop: boolean}}
    */
-  function chooseHold(ps) {
-    const { mask, up, yz } = fromPlayerState(ps);
+  function chooseHold(ps, blocked) {
+    const { mask, up, yz } = coords(ps, blocked);
     const rollsLeft = ps.rollsLeft > 2 ? 2 : ps.rollsLeft;
     if (rollsLeft <= 0) {
       return { hold: [true, true, true, true, true], stop: true };
@@ -80,10 +101,11 @@ export async function loadOptimalAI(baseUrl = '') {
    * dice into (always legal — evalTurn's best over rollsLeft=0 is the argmax
    * over LEGAL categories, joker restrictions included).
    * @param {Object} ps PlayerState with rolled dice
+   * @param {Set<string>} [blocked] opponent-claimed categories (Category Claim)
    * @returns {string}
    */
-  function chooseCategory(ps) {
-    const { mask, up, yz } = fromPlayerState(ps);
+  function chooseCategory(ps, blocked) {
+    const { mask, up, yz } = coords(ps, blocked);
     return policy.evalTurn(mask, up, yz, ps.dice, 0).best.cat;
   }
 

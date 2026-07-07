@@ -34,7 +34,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
-import { recordDecision, analyze, OPTIMAL_EPS } from './public/js/analysis.js';
+import { recordDecision, analyze, subsetReport, OPTIMAL_EPS } from './public/js/analysis.js';
 import { CATS, PlayerState, nextDice } from './public/shared/game.js';
 import { Policy, fromPlayerState } from './solver/policy.js';
 
@@ -321,6 +321,39 @@ ok(`labels: "${dA.yoursLabel}" vs "${dA.optimalLabel}"; "${dB.yoursLabel}" vs "$
   assert.ok(Math.abs(d.loss - Math.max(0, best2 - ev333)) > 1e-6, 'NOT graded against [3,3,3]');
   ok(`keep-multiset matching: [3,3] → ev ${ev33.toFixed(4)} (loss ${d.loss.toFixed(4)}), `
     + `distinct from [3] ev ${ev3.toFixed(4)} and [3,3,3] ev ${ev333.toFixed(4)}`);
+}
+
+// ---------------------------------------------------------------------------
+// 5) subsetReport (the Coach's flagged-decisions review): a subset of graded
+//    decisions gets its running Σ and summary recomputed over just that subset.
+// ---------------------------------------------------------------------------
+
+{
+  // Flag one blunder (dA) and one optimal decision — the shape a training player
+  // produces by tapping "Flag for review" on two turns.
+  const optimalPick = report.decisions.find((d) => d.optimal && d.round !== dA.round);
+  const subset = report.decisions.filter((d) => d === dA || d === optimalPick);
+  const sub = subsetReport(subset);
+
+  assert.equal(sub.nDecisions, 2, 'subset keeps exactly the flagged decisions');
+  assert.equal(sub.nOptimal, 1, 'one of the two flagged was optimal');
+  assert.ok(Math.abs(sub.accuracyPct - 50) < 1e-9, 'accuracy over the subset is 50%');
+  assert.ok(Math.abs(sub.totalLoss - dA.loss) < 1e-12, 'subset totalLoss = the one blunder’s loss');
+  assert.equal(sub.worst, sub.decisions.find((d) => !d.optimal), 'worst is the flagged blunder');
+  // Running Σ is recomputed over the subset (not carried from the full game).
+  let run = 0;
+  for (const d of sub.decisions) { run += d.loss; assert.ok(Math.abs(d.cumLoss - run) < 1e-12, 'subset cumLoss'); }
+  // subsetReport returns fresh entries — the source decisions are not mutated.
+  assert.ok(sub.decisions.every((d, i) => d !== subset[i]), 'subsetReport copies entries (no aliasing)');
+  ok(`subsetReport: 2 flagged → ${sub.nOptimal}/${sub.nDecisions} optimal, `
+    + `Σ ${sub.totalLoss.toFixed(2)}, worst −${sub.worst.loss.toFixed(2)}`);
+
+  // Empty subset (nothing flagged) is well-formed and renders as "no decisions".
+  const empty = subsetReport([]);
+  assert.equal(empty.nDecisions, 0);
+  assert.equal(empty.accuracyPct, 100);
+  assert.equal(empty.worst, null);
+  ok('subsetReport([]) is a well-formed empty report');
 }
 
 console.log(`\n# test-analysis: all ${passed} checks passed`);

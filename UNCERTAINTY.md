@@ -1,114 +1,130 @@
-# Luck vs Skill — the uncertainty decomposition
+# Luck vs Skill — the perfect-vs-near-perfect win rate
 
 This is the as-built design of the luck/skill readout on the variant-selection screen. It
-answers one question per variant: **of the things that decide who wins, how much is the dice
-(luck) and how much is the gap in play (skill)?** The estimate is a nested Monte-Carlo run
-offline by `solver/uncertainty.js`, which writes `public/uncertainty.json`; the browser
+answers one question per variant: **if you play better than your opponent, how often do the
+rules let that decide the game?** The estimate is a single Monte-Carlo calculation run offline
+by `solver/uncertainty.js`, which writes `public/uncertainty.json`; the browser
 (`public/js/uncertainty-ui.js`) reads that tiny JSON and paints a split bar under each variant
 card.
 
-## What is decomposed
+## The one calculation
 
-The object of study is the **match margin**
+A **perfect player** plays head-to-head against a **near-perfect player**, N games per variant.
+
+- **Perfect player** — the solver-optimal action (`policy.evalTurn(...).best`) at every
+  decision.
+- **Near-perfect player** — also computes the EV of every available option, but when **two or
+  more options sit within 4 EV points of the best**, it picks **uniformly at random among that
+  near-tie set**; otherwise it takes the best. (The window is 4 — a middle ground between a tight
+  3, a near-optimal opponent, and a loose 6, a dramatically imperfect one.) The option set
+  per decision:
+  - `rollsLeft > 0`: every distinct keep sub-multiset of the current dice (incl. keep-all and
+    keep-none) **plus** every legal score-now category — all on the same EV scale, so one pool;
+  - `rollsLeft = 0`: every legal category.
+
+The definition of the readout:
+
+> If the perfect player wins **100%** of those games, the variant is **100% skill** — the rules
+> let the better play decide every game. If it wins only **50%** — no better than a coin flip —
+> the better play never mattered: **0% skill**. Linearly in between:
 
 ```
-M = S_A − S_B          (final-score difference of the two players; sign(M) = winner)
+skill% = 2 × (winRate − 50%)   clamped to [0, 100]
+luck%  = 100 − skill%
 ```
 
-We split the variance of `M` by the **law of total variance**, conditioning on the skill pair
-`Θ = (epsA, epsB)`:
-
-```
-Aleatory  = E_Θ[ Var_Ω(M | Θ) ]    // skills fixed, dice swing the margin   → LUCK
-Epistemic = Var_Θ[ E_Ω(M | Θ) ]    // dice averaged out, skill gap swings it → SKILL
-
-Aleatory + Epistemic = Var(M)      (exactly)
-```
-
-Each term is reported as an absolute variance and as a percentage of `Var(M)`. The two
-percentages sum to ~100 per variant — that identity is the headline sanity check.
-
-## The skill model (the eps-player)
-
-A player's skill is a single knob `eps ∈ [0, 1]`. An **eps-player** plays the solver-optimal
-move (`policy.evalTurn`) except with probability `eps`, when it instead takes a **uniformly
-random legal action**:
-
-- at a **reroll** decision (`rollsLeft ∈ {1,2}`): a fair coin picks between *score now* → a
-  uniformly random legal category, and *reroll* → a random keep submask of the current dice
-  (each die held with probability 1/2);
-- at **`rollsLeft = 0`**: a uniformly random legal category.
-
-`eps = 0` is perfect play; `eps = 1` is fully random legal play. Each player's `eps` is drawn
-independently, once per outer skill-pair, from the active spread's distribution.
-
-### Skill spreads
-
-| Key | Label | `eps` distribution |
-| --- | --- | --- |
-| `experts` | Experts | `U(0, 0.15)` |
-| `mixed` | Mixed (default) | `U(0, 0.6)` |
-| `novices` | Novices | `U(0.3, 0.85)` |
+A tied final score counts as half a win.
 
 ## The dice (per variant)
 
-Each inner game draws one shared bank `shared = makeShared()` and two per-player luck tapes
-`luckA, luckB = makeLuck()`. Player A plays with `(shared, luckA, mode)` and B with
-`(shared, luckB, mode)` by setting `ps.luck`; `nextDice` then applies the variant's dice
-sharing automatically:
+Each game draws one shared bank `shared = makeShared()` and two per-player luck tapes
+`luckA, luckB = makeLuck()`. The perfect player plays with `(shared, luckA, mode)` and the
+near-perfect player with `(shared, luckB, mode)` by setting `ps.luck`; `nextDice` then applies
+the variant's dice sharing automatically:
 
 - **mode 1 — Classic:** fully independent dice.
 - **mode 2 — Shared Start:** shared opening roll (`shared.first`), independent rerolls.
 - **mode 3 — Linked Dice:** shared opening + k-indexed shared rerolls (`shared.rerolls`).
 
-Sharing dice makes `S_A` and `S_B` **positively correlated**, and that correlation cancels in
-`M = S_A − S_B`. That cancellation is precisely the aleatory (luck) reduction the variants buy.
+Sharing dice makes the two scores **positively correlated**, which cancels in the margin — the
+same near-perfect skill deficit (mean margin ≈ 53 pts in every variant, with the 4-EV window) is
+decided less by the dice and more by the play as the sharing deepens. That is exactly what the
+readout measures.
 
-## The estimator (nested MC)
-
-- **Outer loop:** `K` skill-pairs `Θ_k`. Pairs are drawn once per spread and **reused across
-  the three variants**, because `E_Ω[M | Θ]` does not depend on the variant.
-- **Inner loop:** `J` games per pair → margins `M_{k,j}`; `μ_k = mean_j M`, `v_k = var_j M`.
-  Common random dice (the same `shared`/`luckA`/`luckB`, re-shared) are reused across the three
-  variants within each inner game for variance reduction.
-- **Combine:** `Aleatory = mean_k v_k`, `Epistemic = var_k μ_k`. A pooled raw `Var(M)` over all
-  `K·J` margins is computed independently as a cross-check (must ≈ Aleatory + Epistemic).
-
-The shipped `public/uncertainty.json` was generated with `K = 320`, `J = 200`
-(64,000 margins per cell), `seed = 1`.
+The same tapes are re-shared across the three variants within a game (common random numbers),
+and each game's RNG stream is seeded from `(seed, gameIndex)`, so the JSON is reproducible and
+independent of worker count.
 
 ## Predicted behavior (the sanity checks)
 
-1. **`Aleatory% + Epistemic% ≈ 100`** per variant (law of total variance), and
-   `|rawVar − (Aleatory + Epistemic)|` is small.
-2. **Epistemic absolute variance is ~constant across the three variants within a spread** — a
-   single player's score distribution is variant-independent, so `E_Ω[M | Θ]` (hence its
-   variance over `Θ`) does not depend on the variant.
-3. **Aleatory decreases 1 → 2 → 3**, so the skill share **`Epistemic%` increases 1 → 2 → 3**.
-   Linked Dice is the most skill-driven variant.
+1. **Mean margin ≈ constant across variants** — a single player's score distribution is
+   variant-independent, so the near-perfect player's expected deficit doesn't move.
+2. **Margin std shrinks 1 → 2 → 3** — shared dice cancel the common luck.
+3. Therefore **win rate and skill% rise 1 → 2 → 3**. Linked Dice is the most skill-driven
+   variant.
 
-## Shipped numbers (from `public/uncertainty.json`, seed 1, K=320 J=200)
+## Match length (`pointsGamesTo95`) — games to a 95% score lead
 
-Aleatory / Epistemic as % of `Var(M)`:
+Each variant card shows the **fewest games until the perfect player is >95% likely to have the
+higher SUMMED score** across those games — `P(Σ margin > 0) ≥ 0.95`, where `margin` is
+perfect-minus-near-perfect points in a single game. `solver/uncertainty.js`'s `pointsGamesTo95`
+builds the exact integer histogram of the per-game margin from the raw simulation, convolves it
+`N` times, and returns the smallest `N` clearing 0.95.
 
-| Spread | Classic | Shared Start | Linked Dice |
-| --- | --- | --- | --- |
-| Experts | 89.0 / 11.0 | 88.5 / 11.6 | 78.5 / 21.5 |
-| Mixed | 48.2 / 51.8 | 47.1 / 52.9 | 41.2 / 58.8 |
-| Novices | 62.7 / 37.3 | 62.7 / 37.3 | 61.8 / 38.2 |
+Summed points has **no parity sawtooth**: an exact tie of the running point *total* is
+vanishingly rare (unlike a tie in game-*wins*, which is common at even lengths — see below), so
+`P(Σ margin > 0)` climbs essentially monotonically in `N` and any length, even or odd, is a fair
+answer. The margin is also **right-skewed** (the perfect player's upside tail runs longer than its
+downside), which is why the shipped points-based lengths (6 / 5 / 3) don't all match a naïve
+normal approximation `z²·(σ/μ)²` (≈5.75 / 5.08 / 3.01 → would round to 6 / 6 / 4) — Shared Start
+clears 95% a full game earlier than the normal shortcut predicts, because of that skew. The exact
+convolution is what's shipped.
 
-Epistemic absolute variance is near-constant per spread (Experts ≈ 820/806/804; Mixed ≈
-4885/4816/4926; Novices ≈ 1447/1405/1410), and the skill share rises 1 → 2 → 3 in every spread,
-as predicted.
+### Background: the win-based best-of-N (`gamesTo95`)
+
+The JSON also carries a second, win-based statistic: the **best-of series length at which perfect
+play takes the majority of *games* (not points) with >95% probability** — the shortest series in
+which the better player reliably wins more games than they lose. Each game is an independent step
+in the win-difference `D`: +1 (perfect win, `pWin`), −1 (perfect loss, `pLose`), 0 (tie, `pTie`).
+`gamesTo95` convolves the exact distribution of `D` and returns the smallest **odd** length `N`
+with `P(D > 0) > 0.95`.
+
+**Why odd (a "best-of-N"):** `P(D > 0)` — strictly more wins, i.e. a majority — is a *parity
+sawtooth* in `N`. At an even length the match can end **tied on wins** (`D = 0`), which isn't a
+majority, so `P(D > 0)` dips below the neighbouring odd lengths. Concretely, `P(D = 0)` is ~0.3%
+at odd `N` but jumps to ~8% at `N = 6` (Classic), and that draw mass is subtracted from
+`P(D > 0)`. The exact one-step recurrence makes it precise:
+`P(win, N+1) − P(win, N) = pWin·P(D_N = 0) − pLose·P(D_N = 1)`, which is negative across every
+odd→even step. So the odd lengths are the peaks and the even lengths the troughs; the first length
+to clear 0.95 is always odd. (This was verified by a four-method investigation — exact
+enumeration, Monte Carlo at z > 170, rational-arithmetic convolution, and a code audit — all
+confirming the sawtooth is real, not a bug.) This win-based figure is not currently shown on the
+cards — the points-based one above is — but it's kept in the JSON and this doc since "best-of-N
+series" is the more familiar framing and may be surfaced again later.
+
+## Shipped numbers (from `public/uncertainty.json`, seed 1, N = 100,000 games/variant, 4-EV window)
+
+| Variant | Win% | Luck% | Skill% | Mean margin | Margin std | Games to 95% score lead | Win-based best-of |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Classic | 79.5 | 40.9 | 59.1 | 53.3 | 77.8 | 6 | 7 |
+| Shared Start | 81.2 | 37.5 | 62.5 | 52.9 | 72.5 | 5 | 7 |
+| Linked Dice | 86.8 | 26.4 | 73.6 | 53.2 | 56.0 | 3 | 3 |
+
+Mean margin is ~constant and skill% rises 1 → 2 → 3, as predicted. (The 4-EV tie window sits
+between the two extremes we tried: the near-perfect player gives up ~53 pts on average — versus
+~35 at a tight 3-EV window and ~82 at a loose 6-EV one — a meaningful but not exaggerated gap.)
+Both match-length figures fall with skill: Linked Dice settles at 3 games either way, while the
+noisier Classic and Shared Start take longer — 6 and 5 games respectively to a 95% score lead,
+7 each for a 95% series win.
 
 ## Regenerate
 
 ```
-node solver/uncertainty.js                 # defaults K=200 J=150; writes public/uncertainty.json
-node solver/uncertainty.js --K 320 --J 200 --seed 1   # the shipped run
-node solver/uncertainty.js --single        # single-threaded (default uses worker_threads)
+node solver/uncertainty.js                     # defaults N=50000; writes public/uncertainty.json
+node solver/uncertainty.js --N 100000 --seed 1 # the shipped run
+node solver/uncertainty.js --single            # single-threaded (default uses worker_threads)
 ```
 
-The script prints a table and per-spread sanity summary alongside writing the JSON. The browser
-readout fails soft: if the JSON is missing or malformed the bars hide themselves and the game
-still starts normally.
+The script prints a table and the monotonicity sanity check alongside writing the JSON. The
+browser readout fails soft: if the JSON is missing or malformed the bars hide themselves and
+the game still starts normally.
