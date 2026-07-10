@@ -1135,11 +1135,11 @@ input  { font-family: inherit; color: inherit; }
 }
 
 .hi-scroll { overflow-x: auto; overscroll-behavior: contain; }
-.hi-ledger { min-width: 640px; }
+.hi-ledger { min-width: 680px; }
 
 .hi-row {
   display: grid;
-  grid-template-columns: 5.5em 8.5em 1fr 3em 3em 4.5em 3.6em 3.4em;
+  grid-template-columns: 5.5em 8.5em 1fr 2.2em 3em 3em 4.5em 3.6em 3.4em;
   align-items: baseline;
   column-gap: 0.9em;
   padding: 0.42em 0.15em;
@@ -1158,6 +1158,9 @@ input  { font-family: inherit; color: inherit; }
 }
 .hi-date { color: var(--muted); }
 .hi-game, .hi-oppn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hi-res { text-align: center; }
+.hi-res.is-win { font-weight: 600; }
+.hi-res.is-loss, .hi-res.is-tie { color: var(--muted); }
 .hi-you, .hi-them, .hi-perfect, .hi-gap, .hi-acc { text-align: right; }
 .hi-row .is-win, .hi-you.is-win, .hi-them.is-win { font-weight: 600; }
 .hi-row .is-null { color: var(--muted); }

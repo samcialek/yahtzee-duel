@@ -185,11 +185,11 @@ function renderStats(container, games) {
   );
 }
 
-const COLUMNS = ['Date', 'Game', 'Opponent', 'You', 'Them', 'Perfect', 'Gap', 'Acc.'];
+const COLUMNS = ['Date', 'Game', 'Opponent', 'W/L', 'You', 'Them', 'Perfect', 'Gap', 'Acc.'];
 
 function renderTable(container, games) {
   const head = el('div', 'hi-row hi-row--head');
-  const cellCls = ['hi-date', 'hi-game', 'hi-oppn', 'hi-you', 'hi-them', 'hi-perfect', 'hi-gap', 'hi-acc'];
+  const cellCls = ['hi-date', 'hi-game', 'hi-oppn', 'hi-res', 'hi-you', 'hi-them', 'hi-perfect', 'hi-gap', 'hi-acc'];
   COLUMNS.forEach((label, i) => head.append(el('span', cellCls[i], label)));
   container.append(head);
 
@@ -216,11 +216,15 @@ function renderTable(container, games) {
     const acc = el('span', `hi-acc${hasAcc ? '' : ' is-null'}`,
       hasAcc ? `${Math.round(g.accuracyPct)}%` : '—');
 
+    const res = el('span', `hi-res is-${outcome}`,
+      outcome === 'win' ? 'W' : outcome === 'loss' ? 'L' : 'T');
+    res.title = outcome === 'win' ? 'Won' : outcome === 'loss' ? 'Lost' : 'Tied';
+
     row.append(
       date,
       el('span', 'hi-game', gameLabel(g)),
       el('span', 'hi-oppn', String(g.oppName || (g.opp === 'friend' ? 'Friend' : 'Machine'))),
-      you, them, perfect, gap, acc,
+      res, you, them, perfect, gap, acc,
     );
     container.append(row);
   }
