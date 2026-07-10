@@ -15,6 +15,7 @@ import { LocalEngine } from './engine.js';
 import { RemoteEngine } from './net.js';
 import { recordDecision, analyze, renderAnalysis, replayOptimal, subsetReport } from './analysis.js';
 import { init as initUncertainty } from './uncertainty-ui.js';
+import { init as initHistory, recordGame, updateGame, renderHistory } from './history.js';
 
 // ---------------------------------------------------------------------------
 // DOM handles
@@ -26,11 +27,12 @@ const $ = (id) => document.getElementById(id);
 const screenHome = $('screen-home');
 const screenLobby = $('screen-lobby');
 const screenGame = $('screen-game');
+const screenHistory = $('screen-history');
 const overlayEnd = $('overlay-end');
 const toastEl = $('error-toast');
 const toastMsg = $('error-toast-msg');
 
-const SCREENS = { home: screenHome, lobby: screenLobby, game: screenGame };
+const SCREENS = { home: screenHome, lobby: screenLobby, game: screenGame, history: screenHistory };
 
 // Home
 const oppMachine = $('opp-machine');
@@ -56,6 +58,7 @@ const btnStart = $('btn-start');
 const btnCreate = $('btn-create');
 const inputCode = $('input-code');
 const btnJoin = $('btn-join');
+const btnHistory = $('btn-history');
 
 // Lobby
 const lobbyCode = $('lobby-code');
@@ -155,6 +158,11 @@ let moveLog = [];
 let analysisReport = null;        // cached analyze() result for the ended game
 let analysisBusy = false;         // guards the lazy table fetch against re-clicks
 let analysisGen = 0;              // bumped by resetAnalysis(); invalidates in-flight analyses
+let optimalAILoading = null;      // in-flight loadOptimalAI promise, shared by all callers
+
+// Game history (history.js owns storage + the screen; we only feed it records).
+let historyRecorded = false;      // this game already written (end states can re-push)
+let gameAiType = 'standard';      // EFFECTIVE machine strength in play (fallback-aware)
 
 // ---------------------------------------------------------------------------
 // Screen switching + toast
@@ -202,6 +210,7 @@ function resetAnalysis() {
   moveLog = [];
   analysisReport = null;
   analysisGen++;   // discard any analysis still awaiting the strategy-table fetch
+  historyRecorded = false;   // re-arm the once-per-game history record
   overlayAnalysis.classList.remove('is-active');
   // Coach review shares the moveLog + overlay; clear its per-game state too (this
   // also fires on a rematch's end→play, so a coached rematch starts fresh flags).
@@ -302,6 +311,21 @@ function gamePayload() {
   return { mode: claim ? 1 : selectedMode, claim, coach };
 }
 
+// The one lazy-load path for the optimal policy (solver module + the few-MB
+// strategy table): Perfect games, the coach, post-game analysis, and history
+// recording all funnel through here, sharing a single in-flight fetch. Throws
+// on failure (each caller handles its own fallback); safe to retry later.
+async function ensureOptimalAI() {
+  if (optimalAI) return optimalAI;
+  if (!optimalAILoading) {
+    optimalAILoading = import('./ai-optimal.js')
+      .then((mod) => mod.loadOptimalAI(''))
+      .then((loaded) => { optimalAI = loaded; return loaded; })
+      .finally(() => { optimalAILoading = null; });
+  }
+  return optimalAILoading;
+}
+
 async function startAI() {
   if (startingAI) return;                 // Perfect table already loading — ignore re-clicks
   const { mode, claim, coach } = gamePayload();
@@ -317,12 +341,7 @@ async function startAI() {
     btnStart.classList.add('is-loading');
     btnStart.textContent = 'Loading strategy…';
     try {
-      if (!optimalAI) {
-        // Lazy module load: solver code + the few-MB table are only fetched the
-        // first time a Perfect or coached game starts; cached for later games.
-        const mod = await import('./ai-optimal.js');
-        optimalAI = await mod.loadOptimalAI('');
-      }
+      await ensureOptimalAI();
       if (aiType === 'perfect') ai = optimalAI;
     } catch (err) {
       optimalAI = null;
@@ -339,6 +358,9 @@ async function startAI() {
   cleanupEngine();
   resetGameUI();
   isMultiplayer = false;
+  // Effective strength actually in play — the catch above may have downgraded a
+  // Perfect pick to Standard; the history record must say what really ran.
+  gameAiType = ai ? 'perfect' : 'standard';
   // Coached only if requested AND the policy actually loaded; otherwise a plain
   // Classic game (the coach panel stays hidden).
   coachGame = coach && !!optimalAI;
@@ -434,8 +456,64 @@ function handleState(view) {
   if (view.you && view.you.dice === null) {
     held = [false, false, false, false, false];
   }
+  // A game just finished — persist it to the local history exactly once (end
+  // states re-push while multiplayer rematch votes come in; the flag absorbs them).
+  if (view.phase === 'end' && !historyRecorded) {
+    historyRecorded = true;     // set synchronously, before recordGameEnd's async work
+    recordGameEnd(view);
+  }
   showScreen('game');
   render(view);
+}
+
+// ---------------------------------------------------------------------------
+// Game history intake — one record per finished game (history.js stores it)
+// ---------------------------------------------------------------------------
+
+// Save the score row IMMEDIATELY (it must survive a closed tab or a failed
+// table fetch), then patch in the analysis fields — perfect-play score on the
+// player's own dice, EV loss, accuracy — once the strategy table delivers.
+function recordGameEnd(view) {
+  const result = view.result || { you: view.you.total, opp: view.opp.total };
+  const id = recordGame({
+    date: new Date().toISOString(),
+    mode: view.mode,
+    claim: !!view.claim,
+    opp: isMultiplayer ? 'friend' : 'machine',
+    ai: isMultiplayer ? null : gameAiType,
+    coach: coachGame,
+    oppName: view.oppName,
+    yourScore: result.you,
+    oppScore: result.opp,
+    perfectScore: null, evLoss: null, accuracyPct: null, nDecisions: null, nOptimal: null,
+  });
+  // Category Claim has no decision log (and no meaningful optimal replay).
+  if (!id || view.claim || moveLog.length === 0) return;
+  // Snapshot NOW — a rematch clears moveLog and returning home destroys the
+  // engine (dropping its luck context) before the async work below finishes.
+  const log = moveLog.slice();
+  const luckCtx = engine && typeof engine.luckContext === 'function' ? engine.luckContext() : null;
+  const gen = analysisGen;
+  (async () => {
+    try {
+      await ensureOptimalAI();
+      const report = analyze(log, optimalAI.policy);
+      let perfect = null;
+      try { perfect = replayOptimal(luckCtx, optimalAI.policy); } catch { perfect = null; }
+      updateGame(id, {
+        perfectScore: perfect,
+        evLoss: report.totalLoss,
+        accuracyPct: report.accuracyPct,
+        nDecisions: report.nDecisions,
+        nOptimal: report.nOptimal,
+      });
+      // Share with openAnalysis(): the Analysis button then renders instantly.
+      if (gen === analysisGen && !analysisReport) analysisReport = report;
+    } catch {
+      // Offline / fetch failed — the score row is already saved; the analysis
+      // columns simply stay em-dashed for this game.
+    }
+  })();
 }
 
 // ---------------------------------------------------------------------------
@@ -819,12 +897,9 @@ async function openAnalysis() {
   const gen = analysisGen;   // if a rematch resets the log mid-fetch, gen goes stale
   analysisStatus('Consulting the strategy table…');
   try {
-    if (!optimalAI) {
-      // Same lazy path as a Perfect game: module + few-MB table fetched once,
-      // then shared — a Perfect AI started later reuses this instance too.
-      const mod = await import('./ai-optimal.js');
-      optimalAI = await mod.loadOptimalAI('');
-    }
+    // Same lazy path as a Perfect game: module + few-MB table fetched once,
+    // then shared — a Perfect AI started later reuses this instance too.
+    await ensureOptimalAI();
     // A new game started while the table was loading: this run belongs to the
     // finished game, whose log is gone — don't analyze/cache the new game's log.
     if (gen !== analysisGen) return;
@@ -988,6 +1063,9 @@ btnStart.addEventListener('click', startAI);
 btnCreate.addEventListener('click', createRoom);
 btnJoin.addEventListener('click', joinRoom);
 
+// Home — game history (render fresh from storage on every open)
+btnHistory.addEventListener('click', () => { renderHistory(); showScreen('history'); });
+
 // Lobby
 btnCancel.addEventListener('click', returnHome);
 
@@ -1075,3 +1153,7 @@ lobbyCode.textContent = LOBBY_PLACEHOLDER;
 // uncertainty.json (NOT the 2MB strategy table) and paints the split bars.
 // Fire-and-forget: it fails soft and never blocks game start.
 initUncertainty();
+
+// Game history screen — storage + rendering live in history.js; it gets the
+// screen router and the shared toast, never any game state.
+initHistory({ onBack: () => showScreen('home'), toast });

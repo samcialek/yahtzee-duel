@@ -19,7 +19,7 @@
   VISIBILITY CONVENTIONS (app.js drives these):
     * Main screens: elements with class ".screen". Show one by adding the class
       ".is-active" (removes it from the others). Home is active on load.
-        #screen-home   #screen-lobby   #screen-game
+        #screen-home   #screen-lobby   #screen-game   #screen-history
     * End overlay:  #overlay-end  — class ".is-active" shows it above the game.
     * Analysis overlay: #overlay-analysis — same convention; swapped with the
       end overlay by #btn-analysis / #btn-analysis-back.
@@ -85,9 +85,18 @@
     #btn-create           button — create a room
     #input-code           text input — 4-letter room code (auto-uppercased by app.js)
     #btn-join             button — join with the entered code
+    #btn-history        button — open the Game History screen
   LOBBY  (#screen-lobby)
     #lobby-code         giant room-code display
     #btn-cancel         button — cancel / return home
+  HISTORY  (#screen-history)  — client-side game log (localStorage 'yz.history.v1',
+    owned by public/js/history.js; app.js only routes to it and feeds it records)
+    #history-stats      aggregate strip (history.js fills: games / win rate / averages)
+    #history-table      the per-game ledger (history.js fills with .hi-row rows)
+    #history-empty      [hidden] empty-state line (shown when no games are stored)
+    #btn-history-back   button — return home
+    #btn-history-export button — download the stored history as CSV
+    #btn-history-clear  button — wipe stored history (confirm + toast)
   GAME  (#screen-game)
     header:
       #variant-chip     variant name chip (e.g. "Shared Start")
@@ -297,6 +306,10 @@
         </div>
       </section>
 
+      <section class="home-aux reveal">
+        <button class="btn btn--ghost btn--wide" id="btn-history" type="button">Game history</button>
+      </section>
+
       <p class="colophon reveal">Fraunces &amp; IBM&nbsp;Plex&nbsp;Mono &middot; no accounts, no ads &middot; <a href="explore.html">Strategy explorer</a></p>
     </div>
   </main>
@@ -309,6 +322,28 @@
       <p class="lobby-share">Share this code with your opponent.</p>
       <p class="waiting">Waiting for a challenger<span class="ellipsis"><i>.</i><i>.</i><i>.</i></span></p>
       <button class="btn btn--ghost" id="btn-cancel" type="button">Cancel</button>
+    </div>
+  </section>
+
+  <!-- ============================== HISTORY ============================== -->
+  <section class="screen history" id="screen-history">
+    <div class="history-inner">
+      <header class="history-head">
+        <div>
+          <p class="kicker">Your record</p>
+          <h1 class="hi-title">Game history</h1>
+        </div>
+        <button class="btn btn--ghost btn--sm" id="btn-history-back" type="button">Back</button>
+      </header>
+      <div class="hi-stats" id="history-stats" hidden></div>
+      <div class="hi-scroll">
+        <div class="hi-ledger" id="history-table" hidden></div>
+      </div>
+      <p class="hi-empty" id="history-empty" hidden>No games recorded yet. Finish a game and it will appear here.</p>
+      <div class="hi-actions">
+        <button class="btn btn--ghost" id="btn-history-export" type="button">Export CSV</button>
+        <button class="btn btn--ghost" id="btn-history-clear" type="button">Clear history</button>
+      </div>
     </div>
   </section>
 
